@@ -34,3 +34,4 @@ CREATE POLICY "portal_cuenta_usuario_select_own"
 -- 5. Prohibición de escritura para el cliente:
 -- No existen políticas de INSERT, UPDATE ni DELETE para los roles 'anon' ni 'authenticated'.
 -- La inserción y modificación de cuentas está reservada exclusivamente al rol 'service_role' (back office).
+

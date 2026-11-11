@@ -19,3 +19,4 @@ export const POST: APIRoute = async ({ locals, cookies, redirect }) => {
 export const GET: APIRoute = async ctx => {
   return POST(ctx);
 };
+

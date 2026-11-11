@@ -87,6 +87,28 @@ const saldoDisponible = Number(
 
 const sinServiciosAprovisionados =
   !saldoData && extensionesData.length === 0 && troncalesData.length === 0 && didsData.length === 0;
+
+function formatPillStatus(tipo: 'ext' | 'trk', online: boolean, rawStatus?: string) {
+  const str = String(rawStatus || '').trim();
+  const latencyMatch = str.match(/(\d+\s*ms)/i);
+  const latency = latencyMatch ? latencyMatch[1] : null;
+
+  const isUnknown = !str || /unknown|unregistered/i.test(str);
+  const isBareOk = str.toUpperCase() === 'OK';
+
+  const baseLabel = tipo === 'ext'
+    ? (online ? 'Registrada' : 'Desconectada')
+    : (online ? 'En línea' : 'Sin respuesta');
+
+  let subtext = '';
+  if (latency) {
+    subtext = latency;
+  } else if (isBareOk || isUnknown) {
+    subtext = 'sin verificar';
+  }
+
+  return { label: baseLabel, subtext };
+}
 ---
 
 <!DOCTYPE html>
@@ -356,6 +378,12 @@ const sinServiciosAprovisionados =
     }
     .pill-offline .pill-dot { background-color: var(--color-status-off); }
 
+    .pill-meta {
+      opacity: 0.85;
+      font-weight: 400;
+      font-size: 11px;
+    }
+
     .pill-active {
       background-color: #eff6ff;
       color: #1d4ed8;
@@ -472,11 +500,16 @@ const sinServiciosAprovisionados =
                   <td><code>{ext.host}</code></td>
                   <td>{ext.callerid || 'Sin CallerID'}</td>
                   <td>
-                    {ext.online ? (
-                      <span class="pill pill-online"><span class="pill-dot"></span> Registrada ({ext.lineStatus})</span>
-                    ) : (
-                      <span class="pill pill-offline"><span class="pill-dot"></span> Desconectada ({ext.lineStatus})</span>
-                    )}
+                    {(() => {
+                      const st = formatPillStatus('ext', ext.online, ext.lineStatus);
+                      return (
+                        <span class={`pill ${ext.online ? 'pill-online' : 'pill-offline'}`}>
+                          <span class="pill-dot"></span>
+                          <span>{st.label}</span>
+                          {st.subtext && <span class="pill-meta">· {st.subtext}</span>}
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td>{ext.activo ? 'Habilitada' : 'Inactiva'}</td>
                 </tr>
@@ -514,11 +547,16 @@ const sinServiciosAprovisionados =
                   <td><code>{trk.host}</code></td>
                   <td>{trk.max_channels} canales</td>
                   <td>
-                    {trk.online ? (
-                      <span class="pill pill-online"><span class="pill-dot"></span> En línea ({trk.lineStatus})</span>
-                    ) : (
-                      <span class="pill pill-offline"><span class="pill-dot"></span> Fuera de línea ({trk.lineStatus})</span>
-                    )}
+                    {(() => {
+                      const st = formatPillStatus('trk', trk.online, trk.lineStatus);
+                      return (
+                        <span class={`pill ${trk.online ? 'pill-online' : 'pill-offline'}`}>
+                          <span class="pill-dot"></span>
+                          <span>{st.label}</span>
+                          {st.subtext && <span class="pill-meta">· {st.subtext}</span>}
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td>{trk.activo ? 'Activa' : 'Inactiva'}</td>
                 </tr>

@@ -124,3 +124,4 @@ main().catch(err => {
   console.error('[Error Fatal Operador]', err);
   process.exit(1);
 });
+
