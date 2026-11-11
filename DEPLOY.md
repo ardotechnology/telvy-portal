@@ -196,6 +196,44 @@ portal-caddy   caddy:2-alpine             Up ...         0.0.0.0:80->80/tcp, 0.0
 
 ---
 
+## Actualización — Bloque Q3.3: Baja de Cuenta y Reactivación desde el Portal
+
+### Componentes y Endpoints Nuevos
+- `/cuenta/baja`: Pantalla protegida que renderiza el inventario real a perder (saldo, extensiones, troncales y DIDs) junto con advertencias de consecuencias irreversibles.
+- Validación estricta en front-end: Botón de baja deshabilitado hasta que el usuario teclea exactamente `BAJA CONFIRMADA`.
+- `/api/cuenta/cancelar` (POST):
+  - Autenticación estricta: `cliente` se obtiene SOLO de la sesión (`locals.portalCuenta.cliente`).
+  - Rate limiting: 1 solicitud cada 10 segundos por usuario.
+  - Llama a `telvy-client-gate` (`POST /v1/cliente/cuenta/cancelar`) con `X-Internal-Key`, `X-Authenticated-Client` e `Idempotency-Key` (UUID).
+  - Petición asíncrona: Retorna HTTP 202 con `orden_id`.
+- `/api/cuenta/orden-status` (GET):
+  - Consulta el estado de la orden en el motor (`GET /v1/cliente/ordenes/:id`).
+  - El frontend realiza polling cada 1.5s hasta `completado` o `fallido` con tope de tiempo.
+- `/api/cuenta/reactivar` (POST):
+  - Endpoint para revertir la baja y reactivar la cuenta (`POST /v1/cliente/cuenta/reactivar`).
+- Banner en `/`:
+  - Si la cuenta no tiene servicios activos tras la baja, muestra banner explicativo y botón para reactivar la cuenta. Ausente cuando la cuenta está activa.
+
+### Pasos de Despliegue en `agroupweb`
+
+```bash
+# 1. En ardotechnology/telvy-voip-engine: actualizar motor y aplicar migración del outbox
+cd /opt/analisis/telvy-voip-engine
+git pull origin main
+npm run db:migrate
+systemctl restart telvy-client-gate telvy-provisioning-worker telvy-reconciler
+
+# 2. En ardotechnology/telvy-portal: actualizar y recompilar contenedor
+cd /opt/portal-telvy
+git pull origin main
+docker compose up -d --build app
+
+# 3. Verificar estado de los contenedores
+docker compose ps
+```
+
+---
+
 ## Procedimiento de Rollback Inmediato
 
 En caso de cualquier falla de autenticación o bloqueo en producción:

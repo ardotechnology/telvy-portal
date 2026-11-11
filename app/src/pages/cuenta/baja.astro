@@ -1,0 +1,548 @@
+---
+// Verificación estricta de sesión: cliente proviene SOLO del servidor/sesión
+const cliente = Astro.locals.portalCuenta?.cliente;
+const userEmail = Astro.locals.user?.email || '';
+
+if (!cliente) {
+  return Astro.redirect('/cuenta-no-vinculada');
+}
+
+const TELVY_GATE_URL = process.env.TELVY_GATE_URL || 'http://host.docker.internal:4100';
+const CLIENT_API_INTERNAL_KEY = process.env.CLIENT_API_INTERNAL_KEY || '';
+
+const headers = {
+  'X-Internal-Key': CLIENT_API_INTERNAL_KEY,
+  'X-Authenticated-Client': cliente
+};
+
+let saldoDisponible = 0;
+let extensiones: any[] = [];
+let troncales: any[] = [];
+let dids: any[] = [];
+
+try {
+  const [resSaldo, resExt, resTronk, resDids] = await Promise.all([
+    fetch(`${TELVY_GATE_URL}/v1/cliente/saldo`, { headers })
+      .then(async r => ({ ok: r.ok, data: await r.json().catch(() => ({})) }))
+      .catch(() => ({ ok: false, data: {} })),
+    fetch(`${TELVY_GATE_URL}/v1/cliente/extensiones`, { headers })
+      .then(async r => ({ ok: r.ok, data: await r.json().catch(() => ({})) }))
+      .catch(() => ({ ok: false, data: {} })),
+    fetch(`${TELVY_GATE_URL}/v1/cliente/troncales`, { headers })
+      .then(async r => ({ ok: r.ok, data: await r.json().catch(() => ({})) }))
+      .catch(() => ({ ok: false, data: {} })),
+    fetch(`${TELVY_GATE_URL}/v1/cliente/dids`, { headers })
+      .then(async r => ({ ok: r.ok, data: await r.json().catch(() => ({})) }))
+      .catch(() => ({ ok: false, data: {} }))
+  ]);
+
+  if (resSaldo.ok && resSaldo.data?.ok) {
+    const sData = resSaldo.data;
+    const base = Number(sData.saldo_control?.saldo_base ?? sData.saldo?.credit ?? 0);
+    const resv = Number(sData.saldo_control?.saldo_reservado ?? 0);
+    saldoDisponible = Number(sData.saldo_control?.saldo_disponible ?? (base - resv));
+  }
+
+  if (resExt.ok && resExt.data?.ok) {
+    extensiones = resExt.data.extensiones || [];
+  }
+  if (resTronk.ok && resTronk.data?.ok) {
+    troncales = resTronk.data.troncales || [];
+  }
+  if (resDids.ok && resDids.data?.ok) {
+    dids = resDids.data.dids || [];
+  }
+} catch {
+  // En caso de desconexión momentánea, se muestran los datos en 0
+}
+---
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Baja de Cuenta — Portal Telvy</title>
+  <style>
+    :root {
+      --color-highlighter-yellow: #e4f222;
+      --color-ink: #0c0a08;
+      --color-obsidian: #1a1919;
+      --color-paper: #ffffff;
+      --color-bone: #f4f2f0;
+      --color-ash: #6d6c6b;
+      --color-hairline: #e5e7eb;
+      --color-smoke: #e0deda;
+      --color-danger: #dc2626;
+      --color-danger-bg: #fef2f2;
+      --color-danger-border: #fecaca;
+      --radius-card: 14px;
+      --radius-sm: 6px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--color-bone);
+      color: var(--color-ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      line-height: 1.5;
+      padding: 24px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 720px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 18px;
+      background-color: var(--color-obsidian);
+      color: #ffffff;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+    }
+
+    .top-link {
+      color: #9ca3af;
+      text-decoration: none;
+      font-size: 13px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .top-link:hover {
+      color: #ffffff;
+    }
+
+    .badge-client {
+      background-color: var(--color-highlighter-yellow);
+      color: var(--color-ink);
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .card {
+      background-color: var(--color-paper);
+      border: 1px solid var(--color-hairline);
+      border-radius: var(--radius-card);
+      padding: 24px 28px;
+    }
+
+    .card-danger-header {
+      border-top: 4px solid var(--color-danger);
+    }
+
+    h1 {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--color-ink);
+      letter-spacing: -0.02em;
+      margin-bottom: 6px;
+    }
+
+    .card-subtitle {
+      font-size: 14px;
+      color: var(--color-ash);
+      margin-bottom: 20px;
+    }
+
+    /* Lista de Inventario a perder */
+    .inventory-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .inventory-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 16px;
+      background-color: var(--color-bone);
+      border: 1px solid var(--color-smoke);
+      border-radius: 8px;
+      font-size: 14px;
+    }
+
+    .inventory-label {
+      font-weight: 600;
+      color: var(--color-ink);
+    }
+
+    .inventory-value {
+      font-family: monospace;
+      font-weight: 700;
+    }
+
+    .inventory-consequence {
+      font-size: 12px;
+      color: var(--color-danger);
+      margin-left: 8px;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      font-weight: 500;
+    }
+
+    /* Consecuencias */
+    .warning-box {
+      background-color: var(--color-danger-bg);
+      border: 1px solid var(--color-danger-border);
+      border-left: 4px solid var(--color-danger);
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin-bottom: 24px;
+    }
+
+    .warning-title {
+      font-weight: 700;
+      color: var(--color-danger);
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .warning-list {
+      padding-left: 20px;
+      color: #7f1d1d;
+      font-size: 13px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    /* Formulario de confirmación */
+    .confirmation-section {
+      background-color: #fafafa;
+      border: 1px dashed var(--color-smoke);
+      border-radius: 10px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .confirmation-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--color-ink);
+    }
+
+    .confirm-input {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid var(--color-smoke);
+      border-radius: 6px;
+      font-size: 15px;
+      font-family: monospace;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .confirm-input:focus {
+      border-color: var(--color-danger);
+    }
+
+    .btn-baja {
+      padding: 12px 20px;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      background-color: var(--color-danger);
+      color: #ffffff;
+      transition: opacity 0.2s, background-color 0.2s;
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn-baja:disabled {
+      background-color: #e5e7eb;
+      color: #9ca3af;
+      cursor: not-allowed;
+      opacity: 0.8;
+    }
+    .btn-baja:not(:disabled):hover {
+      background-color: #b91c1c;
+    }
+
+    .status-area {
+      display: none;
+      margin-top: 16px;
+      padding: 16px;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+
+    .status-area.error {
+      display: block;
+      background-color: var(--color-danger-bg);
+      border: 1px solid var(--color-danger-border);
+      color: var(--color-danger);
+    }
+
+    .status-area.loading {
+      display: block;
+      background-color: #eff6ff;
+      border: 1px solid #bfdbfe;
+      color: #1e40af;
+    }
+
+    .status-area.success {
+      display: block;
+      background-color: #ecfdf5;
+      border: 1px solid #a7f3d0;
+      color: #065f46;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="top-bar">
+      <a href="/" class="top-link">← Volver al Portal</a>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span class="badge-client">Cliente {cliente}</span>
+        <span>{userEmail}</span>
+      </div>
+    </div>
+
+    <!-- Pantalla Inicial / Formulario de Baja -->
+    <div id="mainFormCard" class="card card-danger-header">
+      <h1>Cancelación de Cuenta VoIP</h1>
+      <p class="card-subtitle">
+        Esta acción es destructiva e inmediata. A continuación se detalla el inventario de servicios y saldo que serán dados de baja de manera irreversible.
+      </p>
+
+      <!-- Inventario real leído del conmutador -->
+      <div class="inventory-list">
+        <div class="inventory-item">
+          <div>
+            <span class="inventory-label">Saldo Disponible</span>
+            <span class="inventory-consequence">→ se pierde, no se reembolsa</span>
+          </div>
+          <span class="inventory-value">${saldoDisponible.toFixed(2)} MXN</span>
+        </div>
+
+        <div class="inventory-item">
+          <div>
+            <span class="inventory-label">Extensiones</span>
+            <span class="inventory-consequence">→ deja de funcionar de inmediato</span>
+            {extensiones.length > 0 && (
+              <div style="font-size: 12px; color: var(--color-ash); margin-top: 2px;">
+                ({extensiones.map(e => e.name).join(', ')})
+              </div>
+            )}
+          </div>
+          <span class="inventory-value">{extensiones.length}</span>
+        </div>
+
+        <div class="inventory-item">
+          <div>
+            <span class="inventory-label">Troncales SIP</span>
+            {troncales.length > 0 && (
+              <div style="font-size: 12px; color: var(--color-ash); margin-top: 2px;">
+                ({troncales.map(t => t.name).join(', ')})
+              </div>
+            )}
+          </div>
+          <span class="inventory-value">{troncales.length}</span>
+        </div>
+
+        <div class="inventory-item">
+          <div>
+            <span class="inventory-label">DIDs Asignados</span>
+            <span class="inventory-consequence">→ vuelven al inventario general</span>
+            {dids.length > 0 && (
+              <div style="font-size: 12px; color: var(--color-ash); margin-top: 2px;">
+                ({dids.map(d => d.did).join(', ')})
+              </div>
+            )}
+          </div>
+          <span class="inventory-value">{dids.length}</span>
+        </div>
+      </div>
+
+      <!-- Aviso de consecuencias -->
+      <div class="warning-box">
+        <div class="warning-title">
+          <span>⚠️</span> Consecuencias obligatorias de la baja
+        </div>
+        <ul class="warning-list">
+          <li>El softphone deja de registrar al instante.</li>
+          <li>El saldo remanente no se reembolsa por política de servicio.</li>
+          <li>Los números telefónicos (DIDs) vuelven a estar disponibles para otro cliente.</li>
+          <li>La cuenta se puede reactivar después, pero la contraseña de la extensión será distinta.</li>
+        </ul>
+      </div>
+
+      <!-- Sección de confirmación con texto exacto -->
+      <div class="confirmation-section">
+        <label for="confirmInput" class="confirmation-label">
+          Para confirmar la baja definitiva, escriba exactamente <strong>BAJA CONFIRMADA</strong>:
+        </label>
+        <input
+          type="text"
+          id="confirmInput"
+          class="confirm-input"
+          placeholder="Escriba BAJA CONFIRMADA"
+          autocomplete="off"
+        />
+        <button id="btnBaja" class="btn-baja" disabled>
+          Confirmar Baja de Cuenta
+        </button>
+      </div>
+
+      <div id="statusBox" class="status-area"></div>
+    </div>
+
+    <!-- Pantalla de Éxito / Confirmación -->
+    <div id="successCard" class="card" style="display: none; border-top: 4px solid #059669; text-align: center; padding: 36px 28px;">
+      <div style="font-size: 48px; margin-bottom: 12px;">✅</div>
+      <h1 style="color: #065f46; margin-bottom: 10px;">Baja de Cuenta Completada</h1>
+      <p style="color: var(--color-ash); font-size: 14px; margin-bottom: 24px;">
+        La cuenta ha sido cancelada en el conmutador y los servicios han sido retirados satisfactoriamente.
+      </p>
+
+      <div style="background-color: var(--color-bone); border: 1px solid var(--color-smoke); border-radius: 8px; padding: 18px; text-align: left; max-width: 480px; margin: 0 auto 24px auto; font-size: 13px; display: flex; flex-direction: column; gap: 8px;">
+        <div><strong>Fecha de Ejecución:</strong> <span id="resFecha"></span></div>
+        <div><strong>ID de Orden:</strong> <code id="resOrdenId" style="word-break: break-all;"></code></div>
+        <div><strong>Estado Final:</strong> <span style="color: #059669; font-weight: 700;">Completado</span></div>
+      </div>
+
+      <a href="/" class="btn-baja" style="background-color: var(--color-obsidian); text-decoration: none; display: inline-flex;">
+        Volver a la Pantalla Principal
+      </a>
+    </div>
+  </div>
+
+  <script>
+    const confirmInput = document.getElementById('confirmInput') as HTMLInputElement;
+    const btnBaja = document.getElementById('btnBaja') as HTMLButtonElement;
+    const statusBox = document.getElementById('statusBox') as HTMLDivElement;
+    const mainFormCard = document.getElementById('mainFormCard') as HTMLDivElement;
+    const successCard = document.getElementById('successCard') as HTMLDivElement;
+    const resFecha = document.getElementById('resFecha') as HTMLSpanElement;
+    const resOrdenId = document.getElementById('resOrdenId') as HTMLElement;
+
+    const EXACT_PHRASE = 'BAJA CONFIRMADA';
+
+    // El botón permanece deshabilitado hasta que el texto coincida exacto
+    confirmInput?.addEventListener('input', () => {
+      btnBaja.disabled = (confirmInput.value.trim() !== EXACT_PHRASE);
+    });
+
+    btnBaja?.addEventListener('click', async () => {
+      if (confirmInput.value.trim() !== EXACT_PHRASE) return;
+
+      btnBaja.disabled = true;
+      confirmInput.disabled = true;
+      statusBox.className = 'status-area loading';
+      statusBox.innerHTML = 'Enviando solicitud de baja al conmutador...';
+
+      try {
+        const res = await fetch('/api/cuenta/cancelar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ motivo: 'portal_cliente' })
+        });
+
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          statusBox.className = 'status-area error';
+          statusBox.innerHTML = `<strong>Error al solicitar baja:</strong> ${data.error || 'Fallo de comunicación'}`;
+          btnBaja.disabled = false;
+          confirmInput.disabled = false;
+          return;
+        }
+
+        const ordenId = data.orden_id;
+        statusBox.innerHTML = `Orden encolada (<code>${ordenId}</code>). Esperando finalización en el motor...`;
+
+        // Polling de estado de orden con tope de tiempo (20 intentos x 1.5s = 30s)
+        let intentos = 0;
+        const maxIntentos = 20;
+
+        const interval = setInterval(async () => {
+          intentos++;
+          try {
+            const checkRes = await fetch(`/api/cuenta/orden-status?orden_id=${ordenId}`);
+            const checkData = await checkRes.json().catch(() => ({}));
+
+            if (checkData.estado === 'completado') {
+              clearInterval(interval);
+              mainFormCard.style.display = 'none';
+              successCard.style.display = 'block';
+              resFecha.textContent = new Date().toLocaleString('es-MX');
+              resOrdenId.textContent = ordenId;
+              return;
+            }
+
+            if (checkData.estado === 'fallido') {
+              clearInterval(interval);
+              statusBox.className = 'status-area error';
+              const errorMotivo = checkData.motivo || checkData.error || 'Error indeterminado en la saga de baja';
+              statusBox.innerHTML = `
+                <div><strong>La orden de baja ha fallado:</strong> ${errorMotivo}</div>
+                <div style="margin-top: 10px;">
+                  <button id="btnRetry" class="btn-baja" style="font-size: 12px; padding: 6px 12px;">Reintentar Baja</button>
+                </div>
+              `;
+              document.getElementById('btnRetry')?.addEventListener('click', () => {
+                confirmInput.disabled = false;
+                confirmInput.value = '';
+                btnBaja.disabled = true;
+                statusBox.className = 'status-area';
+                statusBox.style.display = 'none';
+              });
+              return;
+            }
+
+            if (intentos >= maxIntentos) {
+              clearInterval(interval);
+              statusBox.className = 'status-area loading';
+              statusBox.innerHTML = `
+                <strong>Operación en proceso:</strong> La baja sigue procesándose en segundo plano (Orden: <code>${ordenId}</code>). Puede volver al portal en unos momentos.
+                <div style="margin-top: 12px;">
+                  <a href="/" class="top-link" style="color: #1e40af; font-weight: 600;">Volver al Inicio →</a>
+                </div>
+              `;
+            }
+          } catch (err: any) {
+            // Error momentáneo de red en el poll, reintentar en el siguiente ciclo
+          }
+        }, 1500);
+
+      } catch (err: any) {
+        statusBox.className = 'status-area error';
+        statusBox.innerHTML = `<strong>Error inesperado:</strong> ${err.message || 'Error de conexión'}`;
+        btnBaja.disabled = false;
+        confirmInput.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

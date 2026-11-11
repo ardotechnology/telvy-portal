@@ -61,3 +61,28 @@ export function resetRateLimit(ip: string): void {
   attemptsByIp.delete(cleanIp);
 }
 
+const lastActionTimes = new Map<string, number>();
+
+/**
+ * Rate limit por clave (ej. sesión, user_id o cliente) para acciones críticas como baja o reactivación.
+ */
+export function checkActionRateLimit(
+  key: string,
+  cooldownSeconds: number = 10
+): { allowed: boolean; remainingSeconds: number } {
+  const cleanKey = key || 'unknown';
+  const now = Date.now();
+  const lastTime = lastActionTimes.get(cleanKey);
+
+  if (lastTime) {
+    const elapsedSeconds = (now - lastTime) / 1000;
+    if (elapsedSeconds < cooldownSeconds) {
+      const remainingSeconds = Math.ceil(cooldownSeconds - elapsedSeconds);
+      return { allowed: false, remainingSeconds };
+    }
+  }
+
+  lastActionTimes.set(cleanKey, now);
+  return { allowed: true, remainingSeconds: 0 };
+}
+
