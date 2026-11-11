@@ -135,7 +135,7 @@ cat << EOF > .env
 PORT=3000
 HOST=0.0.0.0
 CLIENT_API_INTERNAL_KEY=${GATE_KEY}
-TELVY_GATE_URL=http://host.docker.internal:4100
+TELVY_GATE_URL=http://127.0.0.1:4100
 SUPABASE_URL=https://mottolvjcmvvcohrvroe.supabase.co
 SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 EOF
