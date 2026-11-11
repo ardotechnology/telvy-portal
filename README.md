@@ -8,3 +8,4 @@ Prototipo de infraestructura y diseño del portal de clientes para Telvy VoIP Pl
 - Cero consultas directas a Supabase o al conmutador desde el frontend.
 
 Consulte [DEPLOY.md](DEPLOY.md) para el procedimiento operativo de despliegue en `agroupweb`.
+
