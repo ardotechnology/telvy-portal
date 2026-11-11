@@ -97,14 +97,18 @@ const saldoDisponible = Number(
   saldoData?.saldo_control?.saldo_disponible ?? (saldoBase - saldoReservado)
 );
 
-// Condición estricta: SOLO "no tiene servicios" (extensiones, troncales y dids vacíos).
+// Condición estricta: SOLO "no tiene servicios" (extensiones, troncales y dids activos vacíos).
 // El saldo NO interviene en la decisión.
 // Si no se pudo consultar el estado (estadoNoDisponible), NO se asume sin servicios.
+// Un DID reservado NO es un servicio activo.
+const didsActivos = didsData.filter(
+  (d: any) => !d.reservado && d.estado_inventario !== 'reservado' && Boolean(d.tiene_destino || d.timbra_en)
+);
 const sinServiciosActivos =
   !estadoNoDisponible &&
   extensionesData.length === 0 &&
   troncalesData.length === 0 &&
-  didsData.length === 0;
+  didsActivos.length === 0;
 
 const sinServiciosAprovisionados = sinServiciosActivos;
 
@@ -411,6 +415,13 @@ function formatPillStatus(tipo: 'ext' | 'trk', online: boolean, rawStatus?: stri
     }
     .pill-active .pill-dot { background-color: #2563eb; }
 
+    .pill-warn {
+      background-color: #fefce8;
+      color: #854d0e;
+      border: 1px solid #fef08a;
+    }
+    .pill-warn .pill-dot { background-color: #ca8a04; }
+
     /* Empty states */
     .empty-state {
       background-color: var(--color-bone);
@@ -628,20 +639,34 @@ function formatPillStatus(tipo: 'ext' | 'trk', online: boolean, rawStatus?: stri
               </tr>
             </thead>
             <tbody>
-              {didsData.map((d: any) => (
-                <tr>
-                  <td><code>{d.did}</code></td>
-                  <td>{d.country || 'Nacional / Sin especificar'}</td>
-                  <td><code>{d.timbra_en || 'Troncal / Extensión'}</code></td>
-                  <td>
-                    {d.activated ? (
-                      <span class="pill pill-active"><span class="pill-dot"></span> Activo</span>
-                    ) : (
-                      <span class="pill pill-offline"><span class="pill-dot"></span> Inactivo</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {didsData.map((d: any) => {
+                const esReservado = d.reservado || d.estado_inventario === 'reservado';
+                const tieneDestino = Boolean(d.tiene_destino || d.timbra_en);
+                const fechaVence = d.reserva_expira_at
+                  ? new Date(d.reserva_expira_at).toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: 'numeric' })
+                  : '';
+                return (
+                  <tr>
+                    <td><code>{d.did}</code></td>
+                    <td>{d.country || 'Nacional / Sin especificar'}</td>
+                    <td>
+                      <code>{d.timbra_en || (esReservado ? 'Sin destino (en reserva)' : 'Sin destino')}</code>
+                    </td>
+                    <td>
+                      {esReservado ? (
+                        <span class="pill pill-warn">
+                          <span class="pill-dot"></span>
+                          <span>Reservado para ti · vence el {fechaVence || '15 días'}</span>
+                        </span>
+                      ) : (d.activated && tieneDestino) ? (
+                        <span class="pill pill-active"><span class="pill-dot"></span> Activo</span>
+                      ) : (
+                        <span class="pill pill-offline"><span class="pill-dot"></span> Inactivo</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

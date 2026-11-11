@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import fs from 'node:fs';
 import http from 'node:http';
 import assert from 'node:assert';
 
@@ -130,7 +131,8 @@ await new Promise<void>(resolve => supabaseServer.listen(MOCK_SUPABASE_PORT, res
 
 // Iniciar Astro
 console.log(`--- INICIANDO SERVIDOR ASTRO EN PUERTO ${ASTRO_PORT} ---`);
-const serverProcess: ChildProcess = spawn('node', ['dist/server/entry.mjs'], {
+const nodeBin = fs.existsSync(process.execPath) ? process.execPath : (fs.existsSync('/Users/ardogroup/.local/bin/node') ? '/Users/ardogroup/.local/bin/node' : 'node');
+const serverProcess: ChildProcess = spawn(nodeBin, ['dist/server/entry.mjs'], {
   cwd: './app',
   env: {
     ...process.env,
