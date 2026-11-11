@@ -478,7 +478,7 @@ async function main() {
     assert.strictEqual(resHomePostBaja.status, 200, 'El portal debe responder 200 sin error 500');
 
     const htmlHomePostBaja = await resHomePostBaja.text();
-    const hasReactivarBanner = htmlHomePostBaja.includes('Tu cuenta no tiene servicios activos. Si la diste de baja, puedes reactivarla aquí.');
+    const hasReactivarBanner = htmlHomePostBaja.includes('Tu cuenta no tiene servicios activos');
     const hasReactivarButton = htmlHomePostBaja.includes('id="btnReactivar"');
     const hasEmptyExt = htmlHomePostBaja.includes('no tiene extensiones asignadas actualmente');
     const hasEmptyTronk = htmlHomePostBaja.includes('no cuenta con troncales SIP configuradas');
@@ -520,7 +520,7 @@ async function main() {
     const hasSaldoReactivado = htmlHomePostReactivar.includes('$1.81');
     const hasExtReactivada = htmlHomePostReactivar.includes('cristian');
     const hasTrkReactivada = htmlHomePostReactivar.includes('p2p_1_22de5');
-    const bannerDesaparecio = !htmlHomePostReactivar.includes('Tu cuenta no tiene servicios activos. Si la diste de baja, puedes reactivarla aquí.');
+    const bannerDesaparecio = !htmlHomePostReactivar.includes('Tu cuenta no tiene servicios activos');
 
     console.log(`  ¿Saldo $1.81 restaurado?: ${hasSaldoReactivado}`);
     console.log(`  ¿Extensión cristian restaurada?: ${hasExtReactivada}`);

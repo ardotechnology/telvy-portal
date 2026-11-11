@@ -26,21 +26,22 @@ let errorExt: string | null = null;
 let errorTronk: string | null = null;
 let errorDids: string | null = null;
 let errorAvisos: string | null = null;
+let conexionFallida = false;
 
 try {
   const [resSaldo, resExt, resTronk, resDids, resAvisos] = await Promise.all([
     fetch(`${TELVY_GATE_URL}/v1/cliente/saldo`, { headers })
       .then(async r => ({ ok: r.ok, status: r.status, data: await r.json().catch(() => ({})) }))
-      .catch(e => ({ ok: false, status: 0, data: { error: e.message } })),
+      .catch(e => { conexionFallida = true; return { ok: false, status: 0, data: { error: e.message } }; }),
     fetch(`${TELVY_GATE_URL}/v1/cliente/extensiones`, { headers })
       .then(async r => ({ ok: r.ok, status: r.status, data: await r.json().catch(() => ({})) }))
-      .catch(e => ({ ok: false, status: 0, data: { error: e.message } })),
+      .catch(e => { conexionFallida = true; return { ok: false, status: 0, data: { error: e.message } }; }),
     fetch(`${TELVY_GATE_URL}/v1/cliente/troncales`, { headers })
       .then(async r => ({ ok: r.ok, status: r.status, data: await r.json().catch(() => ({})) }))
-      .catch(e => ({ ok: false, status: 0, data: { error: e.message } })),
+      .catch(e => { conexionFallida = true; return { ok: false, status: 0, data: { error: e.message } }; }),
     fetch(`${TELVY_GATE_URL}/v1/cliente/dids`, { headers })
       .then(async r => ({ ok: r.ok, status: r.status, data: await r.json().catch(() => ({})) }))
-      .catch(e => ({ ok: false, status: 0, data: { error: e.message } })),
+      .catch(e => { conexionFallida = true; return { ok: false, status: 0, data: { error: e.message } }; }),
     fetch(`${TELVY_GATE_URL}/v1/cliente/avisos/pendientes`, { headers })
       .then(async r => ({ ok: r.ok, status: r.status, data: await r.json().catch(() => ({})) }))
       .catch(e => ({ ok: false, status: 0, data: { error: e.message } }))
@@ -76,8 +77,19 @@ try {
     errorAvisos = resAvisos.data?.error || `HTTP ${resAvisos.status}`;
   }
 } catch (err: any) {
+  conexionFallida = true;
   errorSaldo = err.message || 'Error de conexión con la puerta';
 }
+
+const errorConexionServicios =
+  conexionFallida ||
+  (errorSaldo && errorSaldo.includes('fetch failed')) ||
+  (errorExt && errorExt.includes('fetch failed')) ||
+  (errorTronk && errorTronk.includes('fetch failed')) ||
+  (errorDids && errorDids.includes('fetch failed')) ||
+  errorExt === 'HTTP 0' || errorTronk === 'HTTP 0' || errorDids === 'HTTP 0';
+
+const estadoNoDisponible = Boolean(errorConexionServicios);
 
 const saldoBase = Number(saldoData?.saldo_control?.saldo_base ?? saldoData?.saldo?.credit ?? 0);
 const saldoReservado = Number(saldoData?.saldo_control?.saldo_reservado ?? 0);
@@ -85,11 +97,16 @@ const saldoDisponible = Number(
   saldoData?.saldo_control?.saldo_disponible ?? (saldoBase - saldoReservado)
 );
 
-const sinServiciosAprovisionados =
-  (!saldoData || saldoDisponible <= 0) &&
+// Condición estricta: SOLO "no tiene servicios" (extensiones, troncales y dids vacíos).
+// El saldo NO interviene en la decisión.
+// Si no se pudo consultar el estado (estadoNoDisponible), NO se asume sin servicios.
+const sinServiciosActivos =
+  !estadoNoDisponible &&
   extensionesData.length === 0 &&
   troncalesData.length === 0 &&
   didsData.length === 0;
+
+const sinServiciosAprovisionados = sinServiciosActivos;
 
 function formatPillStatus(tipo: 'ext' | 'trk', online: boolean, rawStatus?: string) {
   const str = String(rawStatus || '').trim();
@@ -438,7 +455,16 @@ function formatPillStatus(tipo: 'ext' | 'trk', online: boolean, rawStatus?: stri
       </div>
     </header>
 
-    {sinServiciosAprovisionados && (
+    {estadoNoDisponible && (
+      <div class="banner-aviso" role="status" style="background-color: #fef2f2; border: 1px solid #fecaca; border-left: 4px solid #dc2626; border-radius: 8px; padding: 14px 18px; margin-bottom: 24px; color: #991b1b; font-size: 14px; display: flex; align-items: center; gap: 12px;">
+        <span style="font-size: 18px;">⚠️</span>
+        <div>
+          <strong>Aviso:</strong> estado no disponible. No fue posible consultar los servicios de la cuenta en el conmutador.
+        </div>
+      </div>
+    )}
+
+    {sinServiciosActivos && (
       <div class="banner-aviso" role="status" style="background-color: #fffbeb; border: 1px solid #fde68a; border-left: 4px solid #f59e0b; border-radius: 8px; padding: 16px 20px; margin-bottom: 24px; color: #92400e; font-size: 14px; display: flex; flex-direction: column; gap: 10px;">
         <div style="display: flex; align-items: center; gap: 10px;">
           <span style="font-size: 20px;">ℹ️</span>
@@ -447,7 +473,9 @@ function formatPillStatus(tipo: 'ext' | 'trk', online: boolean, rawStatus?: stri
           </div>
         </div>
         <div style="padding-top: 10px; border-top: 1px dashed #fcd34d; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
-          <span>Tu cuenta no tiene servicios activos. Si la diste de baja, puedes reactivarla aquí.</span>
+          <span>
+            Tu cuenta no tiene servicios activos.{saldoDisponible > 0 ? ` Tu saldo de $${saldoDisponible.toFixed(2)} MXN se conserva y se restablece si reactivas la cuenta.` : ''}
+          </span>
           <button id="btnReactivar" style="background-color: #059669; color: #ffffff; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer;">
             Reactivar Cuenta
           </button>
