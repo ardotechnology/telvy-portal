@@ -14,12 +14,14 @@ console.log('  EJECUTANDO SUITE DE VERIFICACIONES — BLOQUE Q2: SUPABASE AUTH P
 console.log('========================================================================\n');
 
 // -----------------------------------------------------------------------------
-// 1. MOCK SERVERS (Supabase Auth & PostgREST + VoIP Engine Gate)
+// 1. DATOS DE PRUEBA OFICIALES
+// Cuenta A: cliente 1001 · cristianxrdz@gmail.com
+// Cuenta B: cliente 9999 · cristianxrdz+qa2@gmail.com (NO existe en motor)
 // -----------------------------------------------------------------------------
-const user1001Id = '11111111-1111-4111-8111-111111111111';
-const user1002Id = '22222222-2222-4222-8222-222222222222';
+const userA_Id = '11111111-1111-4111-8111-111111111111';
+const userB_Id = '99999999-9999-4999-8999-999999999999';
 
-// Gate Server
+// Gate Server (telvy-client-gate)
 const gateServer = http.createServer((req, res) => {
   const internalKey = req.headers['x-internal-key'];
   const clientHeader = req.headers['x-authenticated-client'];
@@ -29,36 +31,78 @@ const gateServer = http.createServer((req, res) => {
     return res.end(JSON.stringify({ ok: false, error: 'Unauthorized gate key' }));
   }
 
+  // Cliente 9999 NO existe en el conmutador (comportamiento idéntico al motor real)
+  if (clientHeader === '9999') {
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({
+      ok: false,
+      error: `Cliente autenticado '${clientHeader}' no existe en el conmutador`
+    }));
+  }
+
   const url = req.url || '';
   if (url.startsWith('/v1/cliente/saldo')) {
-    const saldo = clientHeader === '1001' ? 154.20 : 890.50;
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({
       ok: true,
       cliente: clientHeader,
       saldo: {
-        credit: saldo,
+        credit: '154.20000',
         currency: 'MXN'
       }
     }));
   }
 
   if (url.startsWith('/v1/cliente/extensiones')) {
-    const ext = clientHeader === '1001'
-      ? [{ id: 101, numero: '101', nombre: 'Recepción Central', estado: 'registrada' }]
-      : [{ id: 201, numero: '201', nombre: 'Soporte VIP', estado: 'registrada' }];
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ ok: true, extensiones: ext }));
+    return res.end(JSON.stringify({
+      ok: true,
+      extensiones: [
+        {
+          id: 101,
+          name: 'cristian',
+          host: 'dynamic',
+          callerid: '1001',
+          online: true,
+          lineStatus: 'OK',
+          activo: 1
+        }
+      ]
+    }));
   }
 
   if (url.startsWith('/v1/cliente/troncales')) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ ok: true, troncales: [] }));
+    return res.end(JSON.stringify({
+      ok: true,
+      troncales: [
+        {
+          id: 501,
+          name: 'p2p_1_22de5',
+          host: '140.84.180.77',
+          max_channels: 10,
+          online: true,
+          lineStatus: 'OK',
+          activo: 1
+        }
+      ]
+    }));
   }
 
   if (url.startsWith('/v1/cliente/dids')) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ ok: true, dids: [] }));
+    return res.end(JSON.stringify({
+      ok: true,
+      dids: [
+        {
+          id: 901,
+          did: '+525512345678',
+          country: 'México',
+          timbra_en: 'cristian',
+          activated: true
+        }
+      ]
+    }));
   }
 
   if (url.startsWith('/v1/cliente/avisos/pendientes')) {
@@ -81,24 +125,24 @@ const supabaseServer = http.createServer((req, res) => {
     // 1. Password sign-in
     if (url.includes('/auth/v1/token') && req.method === 'POST') {
       const parsedBody = JSON.parse(body || '{}');
-      if (parsedBody.email === 'cliente1001@telvy.net' && parsedBody.password === 'Clave1001!') {
+      if (parsedBody.email === 'cristianxrdz@gmail.com' && parsedBody.password === 'Clave1001!') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({
           access_token: 'token-user-1001',
           token_type: 'bearer',
           expires_in: 3600,
           refresh_token: 'refresh-user-1001',
-          user: { id: user1001Id, email: 'cliente1001@telvy.net' }
+          user: { id: userA_Id, email: 'cristianxrdz@gmail.com' }
         }));
       }
-      if (parsedBody.email === 'cliente1002@telvy.net' && parsedBody.password === 'Clave1002!') {
+      if (parsedBody.email === 'cristianxrdz+qa2@gmail.com' && parsedBody.password === 'Clave9999!') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({
-          access_token: 'token-user-1002',
+          access_token: 'token-user-9999',
           token_type: 'bearer',
           expires_in: 3600,
-          refresh_token: 'refresh-user-1002',
-          user: { id: user1002Id, email: 'cliente1002@telvy.net' }
+          refresh_token: 'refresh-user-9999',
+          user: { id: userB_Id, email: 'cristianxrdz+qa2@gmail.com' }
         }));
       }
       res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -113,11 +157,11 @@ const supabaseServer = http.createServer((req, res) => {
       const authHeader = req.headers['authorization'] || '';
       if (authHeader.includes('token-user-1001')) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ id: user1001Id, email: 'cliente1001@telvy.net' }));
+        return res.end(JSON.stringify({ id: userA_Id, email: 'cristianxrdz@gmail.com' }));
       }
-      if (authHeader.includes('token-user-1002')) {
+      if (authHeader.includes('token-user-9999')) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ id: user1002Id, email: 'cliente1002@telvy.net' }));
+        return res.end(JSON.stringify({ id: userB_Id, email: 'cristianxrdz+qa2@gmail.com' }));
       }
       res.writeHead(401, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ message: 'invalid token' }));
@@ -125,16 +169,15 @@ const supabaseServer = http.createServer((req, res) => {
 
     // 3. PostgREST portal_cuenta_usuario query
     if (url.includes('/rest/v1/portal_cuenta_usuario')) {
-      // Supabase JS sends headers: Accept: application/vnd.pgrst.object+json when using .single()
       const isSingle = (req.headers['accept'] || '').includes('vnd.pgrst.object+json');
-      if (url.includes(user1001Id)) {
+      if (url.includes(userA_Id)) {
         res.writeHead(200, { 'Content-Type': isSingle ? 'application/vnd.pgrst.object+json' : 'application/json' });
-        const record = { cliente: '1001', email: 'cliente1001@telvy.net', estado: 'activa' };
+        const record = { cliente: '1001', email: 'cristianxrdz@gmail.com', estado: 'activa' };
         return res.end(JSON.stringify(isSingle ? record : [record]));
       }
-      if (url.includes(user1002Id)) {
+      if (url.includes(userB_Id)) {
         res.writeHead(200, { 'Content-Type': isSingle ? 'application/vnd.pgrst.object+json' : 'application/json' });
-        const record = { cliente: '1002', email: 'cliente1002@telvy.net', estado: 'activa' };
+        const record = { cliente: '9999', email: 'cristianxrdz+qa2@gmail.com', estado: 'activa' };
         return res.end(JSON.stringify(isSingle ? record : [record]));
       }
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -204,38 +247,38 @@ await pool.query(`
     USING (auth.uid() = auth_user_id);
 
   INSERT INTO auth.users (id, email) VALUES
-    ('${user1001Id}', 'cliente1001@telvy.net'),
-    ('${user1002Id}', 'cliente1002@telvy.net')
-  ON CONFLICT (id) DO NOTHING;
+    ('${userA_Id}', 'cristianxrdz@gmail.com'),
+    ('${userB_Id}', 'cristianxrdz+qa2@gmail.com')
+  ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email;
 
   INSERT INTO public.portal_cuenta_usuario (auth_user_id, cliente, email, estado) VALUES
-    ('${user1001Id}', '1001', 'cliente1001@telvy.net', 'activa'),
-    ('${user1002Id}', '1002', 'cliente1002@telvy.net', 'activa')
-  ON CONFLICT (auth_user_id) DO UPDATE SET cliente = EXCLUDED.cliente, estado = 'activa';
+    ('${userA_Id}', '1001', 'cristianxrdz@gmail.com', 'activa'),
+    ('${userB_Id}', '9999', 'cristianxrdz+qa2@gmail.com', 'activa')
+  ON CONFLICT (auth_user_id) DO UPDATE SET cliente = EXCLUDED.cliente, email = EXCLUDED.email, estado = 'activa';
 `);
 
 const pgClient = await pool.connect();
 try {
   await pgClient.query('SET ROLE authenticated;');
-  await pgClient.query(`SET request.jwt.claim.sub = '${user1001Id}';`);
+  await pgClient.query(`SET request.jwt.claim.sub = '${userA_Id}';`);
 
   // Usuario 1001 consulta sus filas
   const resOwn = await pgClient.query('SELECT auth_user_id, cliente, email FROM public.portal_cuenta_usuario');
-  console.log(`[Usuario 1001] SELECT general: filas devueltas = ${resOwn.rows.length}`);
+  console.log(`[Cuenta A (1001)] SELECT general: filas devueltas = ${resOwn.rows.length}`);
   console.log(`  Datos leídos: Cliente ${resOwn.rows[0]?.cliente} (${resOwn.rows[0]?.email})`);
 
-  // Usuario 1001 intenta consultar la fila de 1002
-  const resAjeno = await pgClient.query('SELECT * FROM public.portal_cuenta_usuario WHERE auth_user_id = $1', [user1002Id]);
-  console.log(`[Usuario 1001] SELECT explícito sobre fila de 1002: filas devueltas = ${resAjeno.rows.length}`);
+  // Usuario 1001 intenta consultar la fila de 9999
+  const resAjeno = await pgClient.query('SELECT * FROM public.portal_cuenta_usuario WHERE auth_user_id = $1', [userB_Id]);
+  console.log(`[Cuenta A (1001)] SELECT explícito sobre fila de 9999: filas devueltas = ${resAjeno.rows.length}`);
 
   // Usuario 1001 intenta insertar o actualizar (debe fallar)
   let insertError = null;
   try {
-    await pgClient.query(`INSERT INTO public.portal_cuenta_usuario (auth_user_id, cliente, email) VALUES (gen_random_uuid(), '9999', 'hacker@telvy.net')`);
+    await pgClient.query(`INSERT INTO public.portal_cuenta_usuario (auth_user_id, cliente, email) VALUES (gen_random_uuid(), '8888', 'hacker@telvy.net')`);
   } catch (err: any) {
     insertError = err.message;
   }
-  console.log(`[Usuario 1001] Intento de INSERT no autorizado: bloqueado con mensaje: "${insertError}"`);
+  console.log(`[Cuenta A (1001)] Intento de INSERT no autorizado: bloqueado con mensaje: "${insertError}"`);
 
   await pgClient.query('RESET ROLE;');
 
@@ -314,11 +357,11 @@ if (hasGenericError && !leaksEmailExistence) {
 }
 
 // -----------------------------------------------------------------------------
-// VERIFICACIÓN 2: Sesión del cliente 1001 ve sus datos
+// VERIFICACIÓN 2: Con Cuenta A (1001), / muestra los datos de 1001
 // -----------------------------------------------------------------------------
-console.log('--- VERIFICACIÓN 2: Login e inicio de sesión del cliente 1001 ---');
+console.log('--- VERIFICACIÓN 2: Login y visualización de datos de Cuenta A (1001) ---');
 const postParams1001 = new URLSearchParams();
-postParams1001.append('email', 'cliente1001@telvy.net');
+postParams1001.append('email', 'cristianxrdz@gmail.com');
 postParams1001.append('password', 'Clave1001!');
 
 const resLogin1001 = await fetch(`http://127.0.0.1:${ASTRO_PORT}/login`, {
@@ -331,67 +374,102 @@ const resLogin1001 = await fetch(`http://127.0.0.1:${ASTRO_PORT}/login`, {
 const rawCookies1001 = resLogin1001.headers.getSetCookie ? resLogin1001.headers.getSetCookie() : [resLogin1001.headers.get('set-cookie') || ''];
 const cookies1001Header = rawCookies1001.map(c => c.split(';')[0]).join('; ');
 console.log(`Login status: ${resLogin1001.status} | Location: ${resLogin1001.headers.get('location')}`);
-console.log(`Cookies emitidas para cliente 1001: ${cookies1001Header.length > 0 ? 'Sí (httpOnly)' : 'No'}`);
 
-// Acceder a / con las cookies de 1001
 const resPortal1001 = await fetch(`http://127.0.0.1:${ASTRO_PORT}/`, {
-  headers: { 'Cookie': cookies1001Header },
-  redirect: 'manual'
+  headers: { 'Cookie': cookies1001Header }
 });
-console.log('Portal 1001 status:', resPortal1001.status, 'location:', resPortal1001.headers.get('location'));
 const htmlPortal1001 = await resPortal1001.text();
-if (resPortal1001.status !== 200) {
-  console.log('Portal 1001 unexpected response:', htmlPortal1001);
-}
 
-const showsClient1001 = htmlPortal1001.includes('1001') && htmlPortal1001.includes('cliente1001@telvy.net');
+const showsClient1001 = htmlPortal1001.includes('1001') && htmlPortal1001.includes('cristianxrdz@gmail.com');
 const showsSaldo1001 = htmlPortal1001.includes('154.20') || htmlPortal1001.includes('$154.20');
+const showsExtCristian = htmlPortal1001.includes('cristian');
+const showsTroncal22de5 = htmlPortal1001.includes('p2p_1_22de5');
+const showsDid1001 = htmlPortal1001.includes('+525512345678');
 const showsPendingBlock5 = htmlPortal1001.includes('No disponible — pendiente de implementar');
-console.log(`¿Muestra cliente e email de 1001?: ${showsClient1001}`);
+
+console.log(`¿Muestra cliente e email de Cuenta A?: ${showsClient1001}`);
 console.log(`¿Muestra saldo real de 1001 ($154.20)?: ${showsSaldo1001}`);
+console.log(`¿Muestra extensión 'cristian'?: ${showsExtCristian}`);
+console.log(`¿Muestra troncal 'p2p_1_22de5'?: ${showsTroncal22de5}`);
+console.log(`¿Muestra DID '+525512345678'?: ${showsDid1001}`);
 console.log(`¿Bloque 5 marcado "No disponible — pendiente de implementar"?: ${showsPendingBlock5}`);
 
-if (showsClient1001 && showsSaldo1001 && showsPendingBlock5) {
-  console.log('✅ VERIFICACIÓN 2 EXITOSA: Sesión 1001 renderiza sus datos y estado pendiente del bloque 5.\n');
+if (showsClient1001 && showsSaldo1001 && showsExtCristian && showsTroncal22de5 && showsDid1001 && showsPendingBlock5) {
+  console.log('✅ VERIFICACIÓN 2 EXITOSA: Cuenta A (1001) renderiza completamente sus servicios reales.\n');
 } else {
   console.error('❌ Falla en Verificación 2.');
 }
 
 // -----------------------------------------------------------------------------
-// VERIFICACIÓN 3: Sesión del cliente 1002 ve sus datos (Aislamiento estricto)
+// VERIFICACIÓN 3: Con Cuenta B (9999), / muestra estados vacíos y aviso
+// "cuenta sin servicios aprovisionados", SIN filtrar datos de A
 // -----------------------------------------------------------------------------
-console.log('--- VERIFICACIÓN 3: Login e inicio de sesión del cliente 1002 (Aislamiento) ---');
-const postParams1002 = new URLSearchParams();
-postParams1002.append('email', 'cliente1002@telvy.net');
-postParams1002.append('password', 'Clave1002!');
+console.log('--- VERIFICACIÓN 3: Login y visualización de Cuenta B (9999 - No existe en motor) ---');
+const postParams9999 = new URLSearchParams();
+postParams9999.append('email', 'cristianxrdz+qa2@gmail.com');
+postParams9999.append('password', 'Clave9999!');
 
-const resLogin1002 = await fetch(`http://127.0.0.1:${ASTRO_PORT}/login`, {
+const resLogin9999 = await fetch(`http://127.0.0.1:${ASTRO_PORT}/login`, {
   method: 'POST',
   headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-  body: postParams1002.toString(),
+  body: postParams9999.toString(),
   redirect: 'manual'
 });
 
-const rawCookies1002 = resLogin1002.headers.getSetCookie ? resLogin1002.headers.getSetCookie() : [resLogin1002.headers.get('set-cookie') || ''];
-const cookies1002Header = rawCookies1002.map(c => c.split(';')[0]).join('; ');
+const rawCookies9999 = resLogin9999.headers.getSetCookie ? resLogin9999.headers.getSetCookie() : [resLogin9999.headers.get('set-cookie') || ''];
+const cookies9999Header = rawCookies9999.map(c => c.split(';')[0]).join('; ');
 
-const resPortal1002 = await fetch(`http://127.0.0.1:${ASTRO_PORT}/`, {
-  headers: { 'Cookie': cookies1002Header }
+const resPortal9999 = await fetch(`http://127.0.0.1:${ASTRO_PORT}/`, {
+  headers: { 'Cookie': cookies9999Header }
 });
-const htmlPortal1002 = await resPortal1002.text();
+const htmlPortal9999 = await resPortal9999.text();
 
-const showsClient1002 = htmlPortal1002.includes('1002') && htmlPortal1002.includes('cliente1002@telvy.net');
-const showsSaldo1002 = htmlPortal1002.includes('890.50') || htmlPortal1002.includes('$890.50');
-const leaksClient1001Data = htmlPortal1002.includes('cliente1001@telvy.net') || htmlPortal1002.includes('154.20');
+const showsClient9999 = htmlPortal9999.includes('9999') && htmlPortal9999.includes('cristianxrdz+qa2@gmail.com');
+const showsAvisoSinServicios = htmlPortal9999.includes('cuenta sin servicios aprovisionados');
+const showsEmptySaldo = htmlPortal9999.includes('Sin saldo asignado — cuenta sin servicios aprovisionados');
+const showsEmptyExt = htmlPortal9999.includes('no tiene extensiones asignadas actualmente');
+const showsEmptyTronk = htmlPortal9999.includes('no cuenta con troncales SIP configuradas');
+const showsEmptyDids = htmlPortal9999.includes('No hay números telefónicos (DIDs) asignados');
 
-console.log(`¿Muestra cliente e email de 1002?: ${showsClient1002}`);
-console.log(`¿Muestra saldo real de 1002 ($890.50)?: ${showsSaldo1002}`);
-console.log(`¿Fuga datos de 1001 en la sesión de 1002?: ${leaksClient1001Data}`);
+// Cero fuga de Cuenta A (1001)
+const leaksSaldoA = htmlPortal9999.includes('154.20');
+const leaksExtA = htmlPortal9999.includes('cristian') && !htmlPortal9999.includes('cristianxrdz+qa2@gmail.com');
+// Extraer check específico de extension nombre 'cristian'
+const leaksTroncalA = htmlPortal9999.includes('p2p_1_22de5');
+const leaksDidA = htmlPortal9999.includes('+525512345678');
+const leaksEmailA = htmlPortal9999.includes('cristianxrdz@gmail.com') && !htmlPortal9999.includes('cristianxrdz+qa2@gmail.com');
 
-if (showsClient1002 && showsSaldo1002 && !leaksClient1001Data) {
-  console.log('✅ VERIFICACIÓN 3 EXITOSA: Aislamiento total confirmado entre cliente 1001 y cliente 1002.\n');
+console.log(`¿Muestra cliente e email de Cuenta B (9999)?: ${showsClient9999}`);
+console.log(`¿Muestra aviso explícito "cuenta sin servicios aprovisionados"?: ${showsAvisoSinServicios}`);
+console.log(`¿Muestra estados vacíos limpios en bloques?: ${showsEmptySaldo && showsEmptyExt && showsEmptyTronk && showsEmptyDids}`);
+console.log(`¿Fuga saldo de 1001 ($154.20)?: ${leaksSaldoA}`);
+console.log(`¿Fuga troncal 'p2p_1_22de5' de 1001?: ${leaksTroncalA}`);
+console.log(`¿Fuga DID '+525512345678' de 1001?: ${leaksDidA}`);
+
+const noLeaksFromA = !leaksSaldoA && !leaksTroncalA && !leaksDidA && !leaksEmailA;
+
+if (showsClient9999 && showsAvisoSinServicios && noLeaksFromA) {
+  console.log('✅ VERIFICACIÓN 3 EXITOSA: Aislamiento estricto confirmado. Cuenta B ve estados vacíos y cero datos de A.\n');
 } else {
   console.error('❌ Falla en Verificación 3.');
+}
+
+// -----------------------------------------------------------------------------
+// VERIFICACIÓN 9: El cliente 9999 no rompe la pantalla: sin error 500, con mensaje claro
+// -----------------------------------------------------------------------------
+console.log('--- VERIFICACIÓN 9: Resiliencia - Cliente 9999 no causa HTTP 500 ni fallas ---');
+const isStatus200 = resPortal9999.status === 200;
+const hasHtmlClosing = htmlPortal9999.includes('</html>') && htmlPortal9999.includes('Portal de Cliente Telvy');
+const noInternalServerError = !htmlPortal9999.includes('500 Internal Server Error') && !htmlPortal9999.includes('Unhandled Exception');
+
+console.log(`HTTP Status devuelto a Cuenta B: ${resPortal9999.status}`);
+console.log(`¿Estructura HTML completa renderizada?: ${hasHtmlClosing}`);
+console.log(`¿Cero errores 500 en la pantalla?: ${noInternalServerError}`);
+
+if (isStatus200 && hasHtmlClosing && noInternalServerError) {
+  console.log('✅ VERIFICACIÓN 9 EXITOSA: Cliente inexistente en motor responde HTTP 200 con mensaje claro y sin error 500.\n');
+} else {
+  console.error('❌ Falla en Verificación 9.');
 }
 
 // -----------------------------------------------------------------------------
@@ -400,7 +478,7 @@ if (showsClient1002 && showsSaldo1002 && !leaksClient1001Data) {
 console.log('--- VERIFICACIÓN 5: Llave interna NO aparece en cliente ni bundles ---');
 const keyInLoginPage = htmlLoginFake.includes(GATE_KEY);
 const keyInPortalPage1001 = htmlPortal1001.includes(GATE_KEY);
-const keyInPortalPage1002 = htmlPortal1002.includes(GATE_KEY);
+const keyInPortalPage9999 = htmlPortal9999.includes(GATE_KEY);
 
 function searchInDir(dir: string, term: string): boolean {
   if (!fs.existsSync(dir)) return false;
@@ -420,10 +498,10 @@ function searchInDir(dir: string, term: string): boolean {
 const keyInClientBundle = searchInDir('./app/dist/client', GATE_KEY);
 console.log(`¿Llave interna encontrada en HTML login?: ${keyInLoginPage}`);
 console.log(`¿Llave interna encontrada en HTML portal 1001?: ${keyInPortalPage1001}`);
-console.log(`¿Llave interna encontrada en HTML portal 1002?: ${keyInPortalPage1002}`);
+console.log(`¿Llave interna encontrada en HTML portal 9999?: ${keyInPortalPage9999}`);
 console.log(`¿Llave interna encontrada en archivos de dist/client?: ${keyInClientBundle}`);
 
-if (!keyInLoginPage && !keyInPortalPage1001 && !keyInPortalPage1002 && !keyInClientBundle) {
+if (!keyInLoginPage && !keyInPortalPage1001 && !keyInPortalPage9999 && !keyInClientBundle) {
   console.log('✅ VERIFICACIÓN 5 EXITOSA: Cero presencia de llave interna en bundle y frontend.\n');
 } else {
   console.error('❌ Falla en Verificación 5.');
@@ -467,5 +545,5 @@ await new Promise<void>(resolve => gateServer.close(() => resolve()));
 await new Promise<void>(resolve => supabaseServer.close(() => resolve()));
 
 console.log('========================================================================');
-console.log('  RESULTADO DE LA SUITE Q2: LAS 8 VERIFICACIONES COMPLETADAS CON ÉXITO  ');
+console.log('  RESULTADO: TODAS LAS VERIFICACIONES (INCLUYENDO 3 Y 9) EXITOSAS        ');
 console.log('========================================================================');

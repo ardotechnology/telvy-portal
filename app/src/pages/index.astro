@@ -84,6 +84,9 @@ const saldoReservado = Number(saldoData?.saldo_control?.saldo_reservado ?? 0);
 const saldoDisponible = Number(
   saldoData?.saldo_control?.saldo_disponible ?? (saldoBase - saldoReservado)
 );
+
+const sinServiciosAprovisionados =
+  !saldoData && extensionesData.length === 0 && troncalesData.length === 0 && didsData.length === 0;
 ---
 
 <!DOCTYPE html>
@@ -403,6 +406,15 @@ const saldoDisponible = Number(
       </div>
     </header>
 
+    {sinServiciosAprovisionados && (
+      <div class="banner-aviso" role="status" style="background-color: #fffbeb; border: 1px solid #fde68a; border-left: 4px solid #f59e0b; border-radius: 8px; padding: 14px 18px; margin-bottom: 24px; color: #92400e; font-size: 14px; display: flex; align-items: center; gap: 12px;">
+        <span style="font-size: 18px;">ℹ️</span>
+        <div>
+          <strong>Aviso:</strong> cuenta sin servicios aprovisionados. Esta cuenta no cuenta actualmente con líneas, extensiones ni crédito configurados en el conmutador.
+        </div>
+      </div>
+    )}
+
     <!-- BLOQUE 1: Saldo Disponible -->
     <section class="card">
       <h2 class="card-title">1. Saldo Disponible</h2>
@@ -430,7 +442,9 @@ const saldoDisponible = Number(
         </div>
       ) : (
         <div class="empty-state">
-          No fue posible leer el saldo del cliente {cliente} ({errorSaldo}).
+          {sinServiciosAprovisionados
+            ? 'Sin saldo asignado — cuenta sin servicios aprovisionados.'
+            : `No fue posible leer el saldo del cliente ${cliente} (${errorSaldo}).`}
         </div>
       )}
     </section>
