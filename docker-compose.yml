@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    container_name: portal-app
+    restart: unless-stopped
+    # Permite a la app dentro de la red bridge resolver la IP del gateway del host
+    # para conectarse al servicio telvy-client-gate en el host.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - PORT=3000
+      - HOST=0.0.0.0
+      - TELVY_CLIENT=1001
+      - TELVY_GATE_URL=http://host.docker.internal:4100
+      - CLIENT_API_INTERNAL_KEY=${CLIENT_API_INTERNAL_KEY}
+    expose:
+      - "3000"
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: portal-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/etc/caddy/certs:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  caddy_data:
+  caddy_config:

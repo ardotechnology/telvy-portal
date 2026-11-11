@@ -1,0 +1,4 @@
+portal.telvy.net {
+    tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin-key.pem
+    reverse_proxy app:3000
+}

@@ -1,0 +1,16 @@
+{
+  "name": "telvy-client-portal-app",
+  "version": "1.0.0",
+  "description": "Portal de Cliente Telvy (Prototipo Q1 - Solo Lectura)",
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "start": "node dist/server/entry.mjs",
+    "build": "astro build",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "@astrojs/node": "^8.3.0",
+    "astro": "^4.16.0"
+  }
+}

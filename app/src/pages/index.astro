@@ -1,0 +1,600 @@
+---
+// Código 100% en el servidor. Nunca se envía ni expone al cliente del navegador.
+const TELVY_CLIENT = process.env.TELVY_CLIENT || '1001';
+const TELVY_GATE_URL = process.env.TELVY_GATE_URL || 'http://host.docker.internal:4100';
+const CLIENT_API_INTERNAL_KEY = process.env.CLIENT_API_INTERNAL_KEY || '';
+
+const headers = {
+  'X-Internal-Key': CLIENT_API_INTERNAL_KEY,
+  'X-Authenticated-Client': TELVY_CLIENT
+};
+
+let saldoData: any = null;
+let extensionesData: any[] = [];
+let troncalesData: any[] = [];
+let didsData: any[] = [];
+let avisosData: any[] = [];
+
+let errorSaldo: string | null = null;
+let errorExt: string | null = null;
+let errorTronk: string | null = null;
+let errorDids: string | null = null;
+let errorAvisos: string | null = null;
+
+try {
+  const [resSaldo, resExt, resTronk, resDids, resAvisos] = await Promise.all([
+    fetch(`${TELVY_GATE_URL}/v1/cliente/saldo`, { headers })
+      .then(async r => ({ ok: r.ok, status: r.status, data: await r.json().catch(() => ({})) }))
+      .catch(e => ({ ok: false, status: 0, data: { error: e.message } })),
+    fetch(`${TELVY_GATE_URL}/v1/cliente/extensiones`, { headers })
+      .then(async r => ({ ok: r.ok, status: r.status, data: await r.json().catch(() => ({})) }))
+      .catch(e => ({ ok: false, status: 0, data: { error: e.message } })),
+    fetch(`${TELVY_GATE_URL}/v1/cliente/troncales`, { headers })
+      .then(async r => ({ ok: r.ok, status: r.status, data: await r.json().catch(() => ({})) }))
+      .catch(e => ({ ok: false, status: 0, data: { error: e.message } })),
+    fetch(`${TELVY_GATE_URL}/v1/cliente/dids`, { headers })
+      .then(async r => ({ ok: r.ok, status: r.status, data: await r.json().catch(() => ({})) }))
+      .catch(e => ({ ok: false, status: 0, data: { error: e.message } })),
+    fetch(`${TELVY_GATE_URL}/v1/cliente/avisos/pendientes`, { headers })
+      .then(async r => ({ ok: r.ok, status: r.status, data: await r.json().catch(() => ({})) }))
+      .catch(e => ({ ok: false, status: 0, data: { error: e.message } }))
+  ]);
+
+  if (resSaldo.ok && resSaldo.data?.ok) {
+    saldoData = resSaldo.data;
+  } else {
+    errorSaldo = resSaldo.data?.error || `HTTP ${resSaldo.status}`;
+  }
+
+  if (resExt.ok && resExt.data?.ok) {
+    extensionesData = resExt.data.extensiones || [];
+  } else {
+    errorExt = resExt.data?.error || `HTTP ${resExt.status}`;
+  }
+
+  if (resTronk.ok && resTronk.data?.ok) {
+    troncalesData = resTronk.data.troncales || [];
+  } else {
+    errorTronk = resTronk.data?.error || `HTTP ${resTronk.status}`;
+  }
+
+  if (resDids.ok && resDids.data?.ok) {
+    didsData = resDids.data.dids || [];
+  } else {
+    errorDids = resDids.data?.error || `HTTP ${resDids.status}`;
+  }
+
+  if (resAvisos.ok && resAvisos.data?.ok) {
+    avisosData = resAvisos.data.avisos || [];
+  } else {
+    errorAvisos = resAvisos.data?.error || `HTTP ${resAvisos.status}`;
+  }
+} catch (err: any) {
+  errorSaldo = err.message || 'Error de conexión con la puerta';
+}
+
+// Cálculo de saldo disponible
+// 1) Si la puerta entrega saldo_control (saldo_base - saldo_reservado de cliente_saldo_control):
+// 2) Si entrega el objeto saldo de switch: se lee saldo.credit
+const saldoBase = Number(saldoData?.saldo_control?.saldo_base ?? saldoData?.saldo?.credit ?? 0);
+const saldoReservado = Number(saldoData?.saldo_control?.saldo_reservado ?? 0);
+const saldoDisponible = Number(
+  saldoData?.saldo_control?.saldo_disponible ?? (saldoBase - saldoReservado)
+);
+---
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Telvy — Portal de Cliente</title>
+  <style>
+    :root {
+      --color-highlighter-yellow: #e4f222;
+      --color-ink: #0c0a08;
+      --color-obsidian: #1a1919;
+      --color-paper: #ffffff;
+      --color-bone: #f4f2f0;
+      --color-ash: #6d6c6b;
+      --color-hairline: #e5e7eb;
+      --color-smoke: #e0deda;
+      --color-status-ok: #059669;
+      --color-status-warn: #d97706;
+      --color-status-off: #6b7280;
+      --radius-card: 14px;
+      --radius-sm: 6px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--color-bone);
+      color: var(--color-ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      line-height: 1.5;
+      padding: 24px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 1040px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* Banner oficial de advertencia */
+    .banner-warning {
+      background-color: var(--color-obsidian);
+      color: #ffffff;
+      border: 1px solid var(--color-obsidian);
+      border-radius: var(--radius-sm);
+      padding: 12px 18px;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .banner-badge {
+      background-color: var(--color-highlighter-yellow);
+      color: var(--color-ink);
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    /* Encabezado */
+    header {
+      background-color: var(--color-paper);
+      border: 1px solid var(--color-hairline);
+      border-radius: var(--radius-card);
+      padding: 24px 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+
+    .brand-title {
+      font-size: 26px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      color: var(--color-ink);
+    }
+
+    .brand-subtitle {
+      font-size: 14px;
+      color: var(--color-ash);
+      margin-top: 4px;
+    }
+
+    .client-chip {
+      background-color: var(--color-bone);
+      border: 1px solid var(--color-smoke);
+      border-radius: 20px;
+      padding: 6px 14px;
+      font-size: 13px;
+      font-family: monospace;
+      color: var(--color-ink);
+    }
+
+    /* Cards */
+    .card {
+      background-color: var(--color-paper);
+      border: 1px solid var(--color-hairline);
+      border-radius: var(--radius-card);
+      padding: 24px 28px;
+    }
+
+    .card-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--color-ink);
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .card-desc {
+      font-size: 13px;
+      color: var(--color-ash);
+      margin-bottom: 18px;
+    }
+
+    /* Bloque 1: Saldo */
+    .saldo-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      align-items: center;
+    }
+
+    .saldo-primary {
+      background-color: var(--color-bone);
+      border: 1px solid var(--color-smoke);
+      border-radius: 10px;
+      padding: 20px;
+    }
+
+    .saldo-label {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--color-ash);
+    }
+
+    .saldo-value {
+      font-size: 38px;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      color: var(--color-ink);
+      margin-top: 4px;
+    }
+
+    .saldo-breakdown {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .breakdown-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 14px;
+      padding-bottom: 6px;
+      border-bottom: 1px dashed var(--color-hairline);
+    }
+
+    .breakdown-row span:first-child {
+      color: var(--color-ash);
+    }
+
+    .breakdown-row span:last-child {
+      font-weight: 600;
+      font-family: monospace;
+    }
+
+    /* Tablas */
+    .table-wrapper {
+      width: 100%;
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      text-align: left;
+    }
+
+    th {
+      padding: 10px 14px;
+      color: var(--color-ash);
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      border-bottom: 1px solid var(--color-hairline);
+    }
+
+    td {
+      padding: 14px;
+      border-bottom: 1px solid var(--color-bone);
+      color: var(--color-ink);
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    /* Badges */
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .pill-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+    }
+
+    .pill-online {
+      background-color: #ecfdf5;
+      color: var(--color-status-ok);
+      border: 1px solid #a7f3d0;
+    }
+    .pill-online .pill-dot { background-color: var(--color-status-ok); }
+
+    .pill-offline {
+      background-color: #f3f4f6;
+      color: var(--color-status-off);
+      border: 1px solid #e5e7eb;
+    }
+    .pill-offline .pill-dot { background-color: var(--color-status-off); }
+
+    .pill-active {
+      background-color: #eff6ff;
+      color: #1d4ed8;
+      border: 1px solid #bfdbfe;
+    }
+    .pill-active .pill-dot { background-color: #2563eb; }
+
+    /* Empty states */
+    .empty-state {
+      background-color: var(--color-bone);
+      border: 1px dashed var(--color-smoke);
+      border-radius: 8px;
+      padding: 22px;
+      text-align: center;
+      color: var(--color-ash);
+      font-size: 14px;
+    }
+
+    .pill-missing-route {
+      display: inline-block;
+      margin-top: 6px;
+      font-size: 11px;
+      color: #92400e;
+      background-color: #fef3c7;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    footer {
+      text-align: center;
+      font-size: 12px;
+      color: var(--color-ash);
+      padding: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Encabezado con texto obligatorio -->
+    <div class="banner-warning">
+      <div>
+        <strong>Prototipo sin autenticación — cliente de prueba 1001</strong>
+      </div>
+      <div class="banner-badge">SOLO LECTURA · PROTOTIPO Q1</div>
+    </div>
+
+    <!-- Encabezado institucional -->
+    <header>
+      <div>
+        <h1 class="brand-title">Portal de Cliente Telvy</h1>
+        <p class="brand-subtitle">Servicios e infraestructura VoIP en tiempo real</p>
+      </div>
+      <div class="client-chip">
+        Cliente fijado: <strong>{TELVY_CLIENT}</strong>
+      </div>
+    </header>
+
+    <!-- BLOQUE 1: Saldo Disponible -->
+    <section class="card">
+      <h2 class="card-title">1. Saldo Disponible</h2>
+      <p class="card-desc">Consultado vía contrato en <code>GET /v1/cliente/saldo</code> (servidor a loopback).</p>
+      {saldoData ? (
+        <div class="saldo-grid">
+          <div class="saldo-primary">
+            <div class="saldo-label">Saldo Disponible</div>
+            <div class="saldo-value">${saldoDisponible.toFixed(2)} <span style="font-size: 18px; font-weight: 400; color: var(--color-ash);">MXN</span></div>
+          </div>
+          <div class="saldo-breakdown">
+            <div class="breakdown-row">
+              <span>Saldo Base:</span>
+              <span>${saldoBase.toFixed(4)} MXN</span>
+            </div>
+            <div class="breakdown-row">
+              <span>Saldo Reservado:</span>
+              <span>${saldoReservado.toFixed(4)} MXN</span>
+            </div>
+            <div class="breakdown-row">
+              <span>Crédito en Conmutador:</span>
+              <span>${Number(saldoData.saldo?.credit ?? 0).toFixed(4)} MXN</span>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div class="empty-state">
+          No fue posible leer el saldo del cliente {TELVY_CLIENT} ({errorSaldo}).
+        </div>
+      )}
+    </section>
+
+    <!-- BLOQUE 2: Extensiones del Cliente -->
+    <section class="card">
+      <h2 class="card-title">2. Extensiones del Cliente</h2>
+      <p class="card-desc">Líneas y extensiones telefónicas aprovisionadas.</p>
+      {extensionesData.length > 0 ? (
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Nombre Extensión</th>
+                <th>Host</th>
+                <th>Caller ID</th>
+                <th>Línea / Registro</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {extensionesData.map((ext: any) => (
+                <tr>
+                  <td><strong>{ext.name}</strong></td>
+                  <td><code>{ext.host}</code></td>
+                  <td>{ext.callerid || 'Sin CallerID'}</td>
+                  <td>
+                    {ext.online ? (
+                      <span class="pill pill-online"><span class="pill-dot"></span> Registrada ({ext.lineStatus})</span>
+                    ) : (
+                      <span class="pill pill-offline"><span class="pill-dot"></span> Desconectada ({ext.lineStatus})</span>
+                    )}
+                  </td>
+                  <td>{ext.activo ? 'Habilitada' : 'Inactiva'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div class="empty-state">
+          El cliente {TELVY_CLIENT} no tiene extensiones asignadas actualmente.
+          {errorExt && errorExt.includes('404') && (
+            <div><span class="pill-missing-route">Ruta GET /v1/cliente/extensiones no disponible en la puerta</span></div>
+          )}
+        </div>
+      )}
+    </section>
+
+    <!-- BLOQUE 3: Troncales del Cliente -->
+    <section class="card">
+      <h2 class="card-title">3. Troncales del Cliente</h2>
+      <p class="card-desc">Troncales SIP registradas o enlaces P2P.</p>
+      {troncalesData.length > 0 ? (
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Nombre Troncal</th>
+                <th>Host / IP Destino</th>
+                <th>Canales Máximos</th>
+                <th>Línea / Conectividad</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {troncalesData.map((trk: any) => (
+                <tr>
+                  <td><strong>{trk.name}</strong></td>
+                  <td><code>{trk.host}</code></td>
+                  <td>{trk.max_channels} canales</td>
+                  <td>
+                    {trk.online ? (
+                      <span class="pill pill-online"><span class="pill-dot"></span> En línea ({trk.lineStatus})</span>
+                    ) : (
+                      <span class="pill pill-offline"><span class="pill-dot"></span> Fuera de línea ({trk.lineStatus})</span>
+                    )}
+                  </td>
+                  <td>{trk.activo ? 'Activa' : 'Inactiva'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div class="empty-state">
+          El cliente {TELVY_CLIENT} no cuenta con troncales SIP configuradas.
+          {errorTronk && errorTronk.includes('404') && (
+            <div><span class="pill-missing-route">Ruta GET /v1/cliente/troncales no disponible en la puerta</span></div>
+          )}
+        </div>
+      )}
+    </section>
+
+    <!-- BLOQUE 4: DIDs Asignados -->
+    <section class="card">
+      <h2 class="card-title">4. DIDs Asignados</h2>
+      <p class="card-desc">Números telefónicos asignados y activos para recepción.</p>
+      {didsData.length > 0 ? (
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Número E.164</th>
+                <th>Ubicación / País</th>
+                <th>Destino</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {didsData.map((d: any) => (
+                <tr>
+                  <td><code>{d.did}</code></td>
+                  <td>{d.country || 'Nacional / Sin especificar'}</td>
+                  <td><code>{d.timbra_en || 'Troncal / Extensión'}</code></td>
+                  <td>
+                    {d.activated ? (
+                      <span class="pill pill-active"><span class="pill-dot"></span> Activo</span>
+                    ) : (
+                      <span class="pill pill-offline"><span class="pill-dot"></span> Inactivo</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div class="empty-state">
+          No hay números telefónicos (DIDs) asignados actualmente al cliente {TELVY_CLIENT}.
+          {errorDids && errorDids.includes('404') && (
+            <div><span class="pill-missing-route">Ruta GET /v1/cliente/dids no disponible en la puerta</span></div>
+          )}
+        </div>
+      )}
+    </section>
+
+    <!-- BLOQUE 5: Avisos del Outbox Pendientes -->
+    <section class="card">
+      <h2 class="card-title">5. Avisos del Outbox Pendientes</h2>
+      <p class="card-desc">Notificaciones generadas pendientes de emisión (solo listadas, sin marcar ni enviar).</p>
+      {avisosData.length > 0 ? (
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>ID Aviso</th>
+                <th>Tipo de Notificación</th>
+                <th>Inactividad</th>
+                <th>Fecha Generación</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {avisosData.map((av: any) => (
+                <tr>
+                  <td><code>{av.id}</code></td>
+                  <td><strong>{av.tipo_aviso}</strong></td>
+                  <td>{av.dias_inactividad} días</td>
+                  <td>{new Date(av.created_at).toLocaleString('es-MX')}</td>
+                  <td><span class="pill pill-offline">Pendiente</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div class="empty-state">
+          Bandeja limpia: No hay avisos del outbox pendientes de emisión para el cliente {TELVY_CLIENT}.
+          {errorAvisos && errorAvisos.includes('404') && (
+            <div><span class="pill-missing-route">Ruta GET /v1/cliente/avisos/pendientes no expuesta en la puerta</span></div>
+          )}
+        </div>
+      )}
+    </section>
+
+    <footer>
+      Telvy Telecommunications · Portal de Cliente · Prototipo Q1 · Loopback Gateway
+    </footer>
+  </div>
+</body>
+</html>

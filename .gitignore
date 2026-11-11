@@ -1,0 +1,17 @@
+# Dependencias y compilación
+node_modules/
+dist/
+.next/
+.astro/
+
+# Secretos y credenciales (OBLIGATORIO)
+.env*
+!.env.example
+certs/
+*.pem
+*.key
+
+# Sistema operativo y logs
+.DS_Store
+*.log
+npm-debug.log*
