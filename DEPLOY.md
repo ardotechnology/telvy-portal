@@ -1,10 +1,10 @@
-# Guía Operativa de Despliegue — Portal de Cliente Telvy (Bloque Q1)
+# Guía Operativa de Despliegue — Portal de Cliente Telvy
 
-Esta guía documenta los pasos exactos y numerados para desplegar el prototipo del **Portal de Cliente de Telvy** en el servidor de producción `agroupweb` (`140.84.180.77`), utilizando Docker Compose y Caddy como reverse proxy TLS con certificados de origen de Cloudflare.
+Esta guía documenta los pasos exactos y numerados para desplegar y actualizar el **Portal de Cliente de Telvy** en el servidor de producción `agroupweb` (`140.84.180.77`), utilizando Docker Compose, Caddy como reverse proxy TLS con certificados Cloudflare Origin, y **Supabase Auth** con **Row Level Security (RLS)** para control de acceso y multitenancy (Bloque Q2).
 
 ---
 
-## Arquitectura de Red y Puertos
+## Arquitectura del Bloque Q2 (Autenticación y Aislamiento)
 
 ```
 [ Navegador / Internet ]
@@ -20,86 +20,109 @@ Esta guía documenta los pasos exactos y numerados para desplegar el prototipo d
                        │ Red interna Docker (Bridge)
                        ▼
     ┌────────────────────────────────────────┐
-    │ App Astro (portal-app)                 │
+    │ App Astro SSR (portal-app)             │
     │  - Puerto interno: 3000 (sin exponer)  │
-    │  - Cliente fijo: TELVY_CLIENT=1001     │
-    │  - Conexión a Gate: host-gateway:4100  │
-    └──────────────────┬─────────────────────┘
-                       │ extra_hosts: host.docker.internal:host-gateway
-                       ▼
-    ┌────────────────────────────────────────┐
-    │ Host Loopback 127.0.0.1                │
-    │  - telvy-client-gate.service (:4100)   │
-    │  - Postgres / pg-test (:5432)          │
-    └────────────────────────────────────────┘
+    │  - Sesiones: Cookies httpOnly (@supabase/ssr)
+    │  - Middleware valida sesión y cuenta   │
+    │  - Deriva 'cliente' desde DB (RLS)     │
+    └──────────┬─────────────────┬───────────┘
+               │                 │
+    (Host Loopback)       (HTTPS Saliente)
+               │                 │
+               ▼                 ▼
+    ┌────────────────────┐ ┌──────────────────────────────────────┐
+    │ telvy-client-gate  │ │ Supabase Cloud (Telvy: mottolvjcmv...)│
+    │ 127.0.0.1:4100     │ │  - auth.users (Autenticación)        │
+    │ Header:            │ │  - public.portal_cuenta_usuario (RLS)│
+    │ X-Internal-Key     │ └──────────────────────────────────────┘
+    │ X-Auth-Client: ID  │
+    └────────────────────┘
 ```
 
-### Justificación de Conectividad con la Puerta (`host.docker.internal:host-gateway`)
-- **Por qué `extra_hosts`:** Caddy requiere resolver `app:3000` mediante el DNS interno de Docker, lo cual exige que tanto Caddy como la aplicación compartan una red bridge gestionada por Compose. Para que `app` pueda consultar `telvy-client-gate` en el host sin exponer el puerto 3000 al exterior, se define `extra_hosts: ["host.docker.internal:host-gateway"]`.
-- **Compatibilidad con bind `127.0.0.1` del host:** Si el kernel de Linux rechaza tráfico hacia `127.0.0.1:4100` proveniente de la interfaz bridge de Docker, se incluye la regla estándar de DNAT en el Paso 3.
-
 ---
 
-## Rutas en la Puerta de Cliente (`telvy-client-gate`)
+## Procedimiento de Despliegue — Bloque Q2
 
-| Bloque en Pantalla | Endpoint Consultado | Estado en Motor de Producción | Manejo en la Aplicación |
-|---|---|---|---|
-| **1. Saldo disponible** | `GET /v1/cliente/saldo` | **Existente (200)** | Se calcula `saldo_base - saldo_reservado` o crédito del switch. |
-| **2. Extensiones** | `GET /v1/cliente/extensiones` | **Existente (200)** | Muestra nombre, host y estado en línea (`online`). |
-| **3. Troncales** | `GET /v1/cliente/troncales` | **Existente (200)** | Muestra troncales SIP, canales y conectividad. |
-| **4. DIDs asignados** | `GET /v1/cliente/dids` | **Existente (200)** | Muestra números E.164, región y destino de timbrado. |
-| **5. Avisos outbox** | `GET /v1/cliente/avisos/pendientes` | **Falta ruta de solo lectura en puerta** *(solo existe la administrativa)* | **Estado vacío explícito:** Se muestra un mensaje limpio indicando que no hay avisos pendientes, sin inventar datos ni consultar Supabase. |
+### Paso 1 — Ejecutar Migración SQL en Supabase
+El portal utiliza el proyecto oficial de Supabase de Telvy (`mottolvjcmvvcohrvroe.supabase.co`).
+NO utilizar el proyecto de Sentinel.
 
----
+Abrir el **SQL Editor** del dashboard de Supabase (o conectarse vía `psql`) y ejecutar el archivo:
+`supabase/migrations/20261111000000_portal_cuenta_usuario.sql`
 
-## Procedimiento de Despliegue (Paso a Paso)
+Contenido a ejecutar:
+```sql
+-- 1. Tabla de vinculación de usuarios de Auth con clientes del conmutador
+CREATE TABLE IF NOT EXISTS public.portal_cuenta_usuario (
+    auth_user_id   UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    cliente        TEXT NOT NULL,
+    email          TEXT NOT NULL,
+    estado         TEXT NOT NULL DEFAULT 'pendiente'
+                   CHECK (estado IN ('pendiente', 'activa', 'suspendida')),
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    CONSTRAINT portal_cuenta_usuario_cliente_key UNIQUE (cliente)
+);
 
-Ejecutar en la consola de `root@agroupweb`:
+-- 2. Índices de consulta rápida
+CREATE INDEX IF NOT EXISTS idx_portal_cuenta_usuario_cliente ON public.portal_cuenta_usuario(cliente);
+CREATE INDEX IF NOT EXISTS idx_portal_cuenta_usuario_email ON public.portal_cuenta_usuario(email);
 
-### Paso 1 — Clonar o Actualizar el Repositorio en `/opt/portal-telvy`
+-- 3. Habilitar y forzar Row Level Security (RLS)
+ALTER TABLE public.portal_cuenta_usuario ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.portal_cuenta_usuario FORCE ROW LEVEL SECURITY;
 
-```bash
-cd /opt
-if [ -d "/opt/portal-telvy/.git" ]; then
-    cd /opt/portal-telvy && git pull origin main
-else
-    git clone https://github.com/ardogroup/portal-telvy.git /opt/portal-telvy
-    cd /opt/portal-telvy
-fi
+-- 4. Política de lectura: El usuario autenticado SOLO puede leer su propia fila
+DROP POLICY IF EXISTS "portal_cuenta_usuario_select_own" ON public.portal_cuenta_usuario;
+CREATE POLICY "portal_cuenta_usuario_select_own"
+    ON public.portal_cuenta_usuario
+    FOR SELECT
+    TO authenticated
+    USING (auth.uid() = auth_user_id);
+
+-- 5. Prohibición de escritura pública: No se crean políticas INSERT/UPDATE para 'authenticated' o 'anon'.
+-- La mutación está reservada a 'service_role'.
 ```
-**Resultado esperado:** Directorio `/opt/portal-telvy` con `docker-compose.yml`, `Caddyfile` y carpeta `app/`.
 
 ---
 
-### Paso 2 — Colocar Certificados Cloudflare Origin en `certs/`
-
-Crear el directorio y colocar el certificado (`origin.pem`) y la llave privada (`origin-key.pem`):
+### Paso 2 — Vincular el Cliente 1001 con el Script de Operador
+En la máquina local o servidor con las credenciales de administración de Supabase:
 
 ```bash
-cd /opt/portal-telvy
-mkdir -p certs
-chmod 700 certs
+cd /opt/portal-telvy # o en local
 
-# Copiar o pegar los certificados generados desde Cloudflare:
-# /opt/portal-telvy/certs/origin.pem
-# /opt/portal-telvy/certs/origin-key.pem
+# Configurar variables temporales de operador
+export SUPABASE_URL="https://mottolvjcmvvcohrvroe.supabase.co"
+export SUPABASE_SERVICE_ROLE_KEY="<SERVICE_ROLE_KEY_DE_TELVY>"
 
-# Asignar permisos estrictos (solo root lectura/escritura)
-chmod 644 certs/origin.pem
-chmod 600 certs/origin-key.pem
-ls -la certs/
+# Ejecutar vinculación enviando invitación por correo y creando registro en DB
+npx tsx scripts/vincular_cliente.ts \
+  --cliente=1001 \
+  --email=cliente1001@telvy.net \
+  --estado=activa
 ```
 **Resultado esperado:**
 ```text
--rw-r--r-- 1 root root ... origin.pem
--rw------- 1 root root ... origin-key.pem
+✅ Usuario autenticado en auth.users (ID: ...)
+✅ Registro insertado en portal_cuenta_usuario: Cliente 1001 -> cliente1001@telvy.net [activa]
 ```
 
 ---
 
-### Paso 3 — Crear `.env` del Portal con la Llave Interna
+### Paso 3 — Actualizar el Código en `agroupweb`
 
-La llave se extrae directamente del archivo oficial `/opt/analisis/telvy-voip-engine/.env` para evitar transcripciones manuales o errores tipográficos:
+En `root@agroupweb`:
+```bash
+cd /opt/portal-telvy
+git pull origin main
+```
+
+---
+
+### Paso 4 — Configurar Variables de Entorno en `/opt/portal-telvy/.env`
+
+Asegurar que el archivo `.env` contenga la configuración requerida por Astro SSR para conectar con Supabase y la puerta del motor:
 
 ```bash
 cd /opt/portal-telvy
@@ -107,30 +130,22 @@ cd /opt/portal-telvy
 # 1. Extraer la llave interna desde el .env del motor
 GATE_KEY=$(grep '^CLIENT_API_INTERNAL_KEY=' /opt/analisis/telvy-voip-engine/.env | cut -d= -f2- | tr -d '\r"')
 
-if [ -z "$GATE_KEY" ]; then
-    echo "ERROR: No se encontró CLIENT_API_INTERNAL_KEY en /opt/analisis/telvy-voip-engine/.env"
-    exit 1
-fi
-
-# 2. Escribir .env local para Compose
+# 2. Generar .env
 cat << EOF > .env
+PORT=3000
+HOST=0.0.0.0
 CLIENT_API_INTERNAL_KEY=${GATE_KEY}
+TELVY_GATE_URL=http://host.docker.internal:4100
+SUPABASE_URL=https://mottolvjcmvvcohrvroe.supabase.co
+SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 EOF
 
 chmod 600 .env
-echo "Archivo .env creado con permisos 600."
-
-# 3. Habilitar ruteo local en el kernel para que bridge alcance 127.0.0.1 si es necesario:
-sysctl -w net.ipv4.conf.all.route_localnet=1 >/dev/null
-DOCKER_GW=$(docker network inspect bridge --format='{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null || echo "172.17.0.1")
-iptables -t nat -C PREROUTING -p tcp -d "$DOCKER_GW" --dport 4100 -j DNAT --to-destination 127.0.0.1:4100 2>/dev/null || \
-iptables -t nat -A PREROUTING -p tcp -d "$DOCKER_GW" --dport 4100 -j DNAT --to-destination 127.0.0.1:4100
 ```
-**Resultado esperado:** `.env` generado con permisos `600` conteniendo `CLIENT_API_INTERNAL_KEY`.
 
 ---
 
-### Paso 4 — Levantar Contenedores con Docker Compose
+### Paso 5 — Recompilar y Levantar Contenedores
 
 ```bash
 cd /opt/portal-telvy
@@ -146,102 +161,55 @@ portal-caddy   caddy:2-alpine             Up ...         0.0.0.0:80->80/tcp, 0.0
 
 ---
 
-### Paso 5 — Las Cinco Verificaciones de Aceptación
+## Las Ocho Verificaciones de Aceptación (Bloque Q2)
 
-#### Verificación 1: La página carga vía HTTPS con datos reales del cliente 1001
-```bash
-curl -sL https://portal.telvy.net | grep -i "saldo"
-```
-**Resultado esperado:**
-Líneas HTML conteniendo `Saldo Disponible`, `$10.00 MXN` y desglose de saldo de la cuenta 1001.
+1. **Redirección anónima:**
+   ```bash
+   curl -sI https://portal.telvy.net/ | grep -i "location:"
+   ```
+   *Esperado:* `Location: /login` con código HTTP 302.
 
-#### Verificación 2: Ausencia absoluta de la llave interna en el navegador
-Buscar el valor exacto de `CLIENT_API_INTERNAL_KEY` en el HTML y en los recursos estáticos servidos:
-```bash
-GATE_KEY=$(grep '^CLIENT_API_INTERNAL_KEY=' .env | cut -d= -f2-)
+2. **Acceso con sesión del cliente 1001:**
+   Iniciar sesión con `cliente1001@telvy.net`. La pantalla muestra el cliente 1001 y su saldo real.
 
-# Comprobar HTML servido
-curl -sL https://portal.telvy.net | grep "$GATE_KEY" && echo "FALLA: Llave encontrada en HTML" || echo "OK: Llave ausente en HTML"
+3. **Aislamiento de sesiones (cliente 1002):**
+   Iniciar sesión con `cliente1002@telvy.net`. La pantalla muestra exclusivamente los datos de 1002 y jamás expone datos de 1001.
 
-# Comprobar en todos los archivos del bundle dentro del contenedor
-docker compose exec app grep -rn "$GATE_KEY" dist/client/ 2>/dev/null && echo "FALLA: Llave encontrada en bundle" || echo "OK: Llave ausente en bundle JS/CSS"
-```
-**Resultado esperado:**
-```text
-OK: Llave ausente en HTML
-OK: Llave ausente en bundle JS/CSS
-```
+4. **Aislamiento RLS en base de datos:**
+   Una consulta `SELECT` bajo el token de 1001 solo devuelve su fila; consultar la fila de 1002 devuelve 0 filas.
 
-#### Verificación 3: Validación del Certificado TLS
-```bash
-# Cabeceras HTTP
-curl -sI https://portal.telvy.net | head -3
+5. **Cero exposición de la llave interna (`CLIENT_API_INTERNAL_KEY`):**
+   ```bash
+   GATE_KEY=$(grep '^CLIENT_API_INTERNAL_KEY=' .env | cut -d= -f2-)
+   curl -sL https://portal.telvy.net/login | grep "$GATE_KEY" && echo "FALLA" || echo "OK: Sin llave interna en HTML"
+   docker compose exec app grep -rn "$GATE_KEY" dist/client/ 2>/dev/null && echo "FALLA" || echo "OK: Sin llave en JS bundle"
+   ```
 
-# Emisor y vigencia del certificado
-openssl s_client -connect portal.telvy.net:443 -servername portal.telvy.net </dev/null 2>/dev/null | openssl x509 -noout -issuer -dates
-```
-**Resultado esperado:**
-- HTTP/2 200 (o HTTP/1.1 200).
-- Emisor: Cloudflare Origin Certificate Authority (o Cloudflare Inc).
-- Fechas de validez vigentes.
+6. **Protección anti-enumeración en `/login`:**
+   Intentar login con credenciales inválidas devuelve `Correo o contraseña incorrectos` sin revelar si el usuario existe.
 
-#### Verificación 4: Integridad de las unidades de telvy y salud del motor en loopback
-```bash
-# 1. Estados de systemd
-systemctl is-active telvy-client-gate telvy-provisioning-worker telvy-reconciler
+7. **Logout seguro:**
+   Pulsar "Cerrar sesión" limpia las cookies de sesión y redirige inmediatamente a `/login`. Los accesos posteriores a `/` rebotan a `/login`.
 
-# 2. Prueba directa al endpoint del motor
-GATE_KEY=$(grep '^CLIENT_API_INTERNAL_KEY=' /opt/analisis/telvy-voip-engine/.env | cut -d= -f2-)
-curl -s -o /dev/null -w "%{http_code}\n" \
-  -H "X-Internal-Key: $GATE_KEY" \
-  -H "X-Authenticated-Client: 1001" \
-  http://127.0.0.1:4100/v1/cliente/saldo
-```
-**Resultado esperado:**
-```text
-active
-active
-active
-200
-```
-
-#### Verificación 5: Suite completa de pruebas de telvy-voip-engine
-```bash
-cd /opt/analisis/telvy-voip-engine
-npm test
-```
-**Resultado esperado:**
-Salida cruda en verde finalizando con `129 / 129 criterios aprobados (exit 0)` sin ninguna regresión en el motor VoIP.
+8. **Compilación limpia de Astro SSR:**
+   `npm run build` en `app/` finaliza con código de salida `0`.
 
 ---
 
-## Procedimiento de Rollback Exacto
+## Procedimiento de Rollback Inmediato
 
-En caso de requerir revertir inmediatamente el prototipo:
+En caso de cualquier falla de autenticación o bloqueo en producción:
 
 ```bash
 cd /opt/portal-telvy
 
-# 1. Detener y eliminar los contenedores y volúmenes asociados
-docker compose down -v
+# 1. Regresar al commit anterior en git
+git checkout HEAD~1
 
-# 2. Eliminar la regla iptables de ruteo bridge (si se aplicó)
-DOCKER_GW=$(docker network inspect bridge --format='{{(index .IPAM.Config 0).Gateway}}' 2>/dev/null || echo "172.17.0.1")
-iptables -t nat -D PREROUTING -p tcp -d "$DOCKER_GW" --dport 4100 -j DNAT --to-destination 127.0.0.1:4100 2>/dev/null || true
+# 2. Reconstruir y levantar versión previa (Bloque Q1 con cliente fijo si fuera necesario)
+docker compose up -d --build
 
-# 3. Eliminar archivos temporales de configuración del portal
-rm -f Caddyfile .env
-
-# 4. Verificar que los puertos 80 y 443 vuelven a quedar libres
-ss -tlnp | grep -E ':80 |:443 '
-# (La salida debe ser estrictamente vacía)
-
-# 5. Confirmar que el motor sigue respondiendo normalmente
-GATE_KEY=$(grep '^CLIENT_API_INTERNAL_KEY=' /opt/analisis/telvy-voip-engine/.env | cut -d= -f2-)
-curl -s -o /dev/null -w "%{http_code}\n" \
-  -H "X-Internal-Key: $GATE_KEY" \
-  -H "X-Authenticated-Client: 1001" \
-  http://127.0.0.1:4100/v1/cliente/saldo
-# (Salida: 200)
+# 3. Revertir cambios en Supabase (si es necesario)
+# Ejecutar en SQL Editor de Supabase:
+# DROP TABLE IF EXISTS public.portal_cuenta_usuario CASCADE;
 ```
-

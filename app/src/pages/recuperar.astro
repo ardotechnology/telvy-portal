@@ -1,0 +1,215 @@
+---
+let submitted = false;
+
+if (Astro.request.method === 'POST') {
+  try {
+    const formData = await Astro.request.formData();
+    const email = String(formData.get('email') || '').trim();
+
+    if (email) {
+      await Astro.locals.supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${Astro.url.origin}/login`
+      });
+    }
+  } catch {
+    // Silencioso por seguridad: previene enumeración de cuentas
+  }
+  submitted = true;
+}
+---
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Recuperar Contraseña — Portal de Cliente Telvy</title>
+  <style>
+    :root {
+      --color-highlighter-yellow: #e4f222;
+      --color-ink: #0c0a08;
+      --color-obsidian: #1a1919;
+      --color-paper: #ffffff;
+      --color-bone: #f4f2f0;
+      --color-ash: #6d6c6b;
+      --color-hairline: #e5e7eb;
+      --color-smoke: #d3d3d3;
+      --radius-card: 14px;
+      --radius-sm: 6px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--color-bone);
+      color: var(--color-ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 24px;
+    }
+
+    .recovery-container {
+      width: 100%;
+      max-width: 440px;
+    }
+
+    .brand-header {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+
+    .brand-title {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      color: var(--color-ink);
+    }
+
+    .brand-subtitle {
+      font-size: 14px;
+      color: var(--color-ash);
+      margin-top: 4px;
+    }
+
+    .card {
+      background-color: var(--color-paper);
+      border: 1px solid var(--color-hairline);
+      border-radius: var(--radius-card);
+      padding: 32px 28px;
+      box-shadow: none;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 18px;
+    }
+
+    label {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--color-ash);
+    }
+
+    input[type="email"] {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid var(--color-smoke);
+      border-radius: var(--radius-sm);
+      font-size: 15px;
+      color: var(--color-ink);
+      background-color: var(--color-paper);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    input[type="email"]:focus {
+      border-color: var(--color-ink);
+    }
+
+    .btn-submit {
+      width: 100%;
+      padding: 13px;
+      background-color: var(--color-ink);
+      color: #ffffff;
+      border: none;
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+
+    .btn-submit:hover {
+      background-color: #262626;
+    }
+
+    .alert-success {
+      background-color: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      color: #166534;
+      padding: 16px;
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      line-height: 1.5;
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .card-footer {
+      margin-top: 20px;
+      display: flex;
+      justify-content: center;
+      font-size: 13px;
+    }
+
+    .card-footer a {
+      color: var(--color-ash);
+      text-decoration: underline;
+    }
+
+    .card-footer a:hover {
+      color: var(--color-ink);
+    }
+  </style>
+</head>
+<body>
+  <div class="recovery-container">
+    <div class="brand-header">
+      <h1 class="brand-title">Recuperación</h1>
+      <p class="brand-subtitle">Portal de Cliente Telvy</p>
+    </div>
+
+    <div class="card">
+      {submitted ? (
+        <div>
+          <div class="alert-success">
+            <strong>Solicitud recibida.</strong><br />
+            Si el correo está registrado en el portal, recibirás un enlace de recuperación en los próximos minutos.
+          </div>
+          <div class="card-footer">
+            <a href="/login">Volver al inicio de sesión</a>
+          </div>
+        </div>
+      ) : (
+        <form method="POST" action="/recuperar">
+          <p style="font-size: 14px; color: var(--color-ash); margin-bottom: 18px;">
+            Ingresa tu correo electrónico registrado y te enviaremos instrucciones para restablecer tu contraseña.
+          </p>
+
+          <div class="form-group">
+            <label for="email">Correo Electrónico</label>
+            <input
+              type="email"
+              id="email"
+              name="email"
+              placeholder="usuario@empresa.com"
+              required
+              autocomplete="email"
+            />
+          </div>
+
+          <button type="submit" class="btn-submit">
+            Enviar Instrucciones
+          </button>
+
+          <div class="card-footer">
+            <a href="/login">Volver al inicio de sesión</a>
+          </div>
+        </form>
+      )}
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,161 @@
+---
+const userEmail = Astro.locals.user?.email || 'Desconocido';
+const estado = Astro.locals.portalCuenta?.estado || 'no_vinculada';
+---
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cuenta No Vinculada — Portal de Cliente Telvy</title>
+  <style>
+    :root {
+      --color-highlighter-yellow: #e4f222;
+      --color-ink: #0c0a08;
+      --color-obsidian: #1a1919;
+      --color-paper: #ffffff;
+      --color-bone: #f4f2f0;
+      --color-ash: #6d6c6b;
+      --color-hairline: #e5e7eb;
+      --color-smoke: #d3d3d3;
+      --radius-card: 14px;
+      --radius-sm: 6px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--color-bone);
+      color: var(--color-ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 24px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 520px;
+    }
+
+    .card {
+      background-color: var(--color-paper);
+      border: 1px solid var(--color-hairline);
+      border-radius: var(--radius-card);
+      padding: 36px 32px;
+      text-align: center;
+    }
+
+    .badge-status {
+      display: inline-block;
+      background-color: #fef3c7;
+      color: #92400e;
+      border: 1px solid #fde68a;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 16px;
+    }
+
+    h1 {
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--color-ink);
+      margin-bottom: 12px;
+    }
+
+    p {
+      font-size: 14px;
+      color: var(--color-ash);
+      line-height: 1.6;
+      margin-bottom: 24px;
+    }
+
+    .info-box {
+      background-color: var(--color-bone);
+      border: 1px solid var(--color-hairline);
+      border-radius: var(--radius-sm);
+      padding: 16px;
+      font-size: 13px;
+      text-align: left;
+      margin-bottom: 24px;
+    }
+
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+
+    .info-row:last-child {
+      margin-bottom: 0;
+    }
+
+    .btn-logout {
+      display: inline-block;
+      width: 100%;
+      padding: 12px;
+      background-color: var(--color-ink);
+      color: #ffffff;
+      border: none;
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+    }
+
+    .btn-logout:hover {
+      background-color: #262626;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <div class="badge-status">
+        {estado === 'suspendida' ? 'Cuenta Suspendida' : 'Pendiente de Vinculación'}
+      </div>
+
+      <h1>Acceso no vinculado a cliente activo</h1>
+
+      <p>
+        Tu cuenta de acceso se ha autenticado correctamente, pero aún no tiene una cuenta de cliente corporativo activa asociada en la plataforma VoIP.
+      </p>
+
+      <div class="info-box">
+        <div class="info-row">
+          <span>Correo autenticado:</span>
+          <strong>{userEmail}</strong>
+        </div>
+        <div class="info-row">
+          <span>Estado en portal:</span>
+          <span style="font-family: monospace;">{estado}</span>
+        </div>
+        <div class="info-row">
+          <span>Contacto de soporte:</span>
+          <a href="mailto:soporte@ardo.technology" style="color: var(--color-ink);">soporte@ardo.technology</a>
+        </div>
+      </div>
+
+      <form method="POST" action="/api/auth/logout">
+        <button type="submit" class="btn-logout">
+          Cerrar Sesión
+        </button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>
