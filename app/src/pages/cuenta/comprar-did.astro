@@ -18,7 +18,8 @@ const headers = {
 const prefijoParam = Astro.url.searchParams.get('prefijo') || '';
 const regionParam = Astro.url.searchParams.get('region') || '';
 
-let saldoDisponible = 0;
+let saldoDisponible: number | null = null;
+let tieneSaldoCuenta = false;
 let didsIniciales: any[] = [];
 let totalDids = 0;
 let motorError: string | null = null;
@@ -37,11 +38,24 @@ try {
       .catch(() => ({ ok: false, data: {} }))
   ]);
 
-  if (resSaldo.ok && resSaldo.data?.ok) {
+  if (resSaldo.ok && resSaldo.data) {
     const sData = resSaldo.data;
-    const base = Number(sData.saldo_control?.saldo_base ?? sData.saldo?.credit ?? 0);
-    const resv = Number(sData.saldo_control?.saldo_reservado ?? 0);
-    saldoDisponible = Number(sData.saldo_control?.saldo_disponible ?? (base - resv));
+    if (sData.saldo?.disponible !== undefined) {
+      saldoDisponible = Number(sData.saldo.disponible);
+      tieneSaldoCuenta = true;
+    } else if (sData.saldo_cuenta !== null && sData.saldo_cuenta !== undefined) {
+      saldoDisponible = Number(sData.saldo_cuenta.disponible);
+      tieneSaldoCuenta = true;
+    } else if (sData.saldo_control?.saldo_disponible !== undefined) {
+      saldoDisponible = Number(sData.saldo_control.saldo_disponible);
+      tieneSaldoCuenta = true;
+    } else if (sData.saldo?.credit !== undefined) {
+      saldoDisponible = Number(sData.saldo.credit);
+      tieneSaldoCuenta = true;
+    } else {
+      saldoDisponible = 0;
+      tieneSaldoCuenta = false;
+    }
   }
 
   if (resDids.ok && resDids.data?.ok) {
@@ -352,7 +366,7 @@ try {
           </p>
         </div>
         <div class="balance-badge">
-          Saldo Disponible: <strong id="lblSaldo">${saldoDisponible.toFixed(2)} MXN</strong>
+          Saldo Disponible: <strong id="lblSaldo">${(saldoDisponible ?? 0).toFixed(2)} MXN</strong>
         </div>
       </div>
 

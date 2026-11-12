@@ -93,11 +93,17 @@ const errorConexionServicios =
 
 const estadoNoDisponible = Boolean(errorConexionServicios);
 
-const saldoBase = Number(saldoData?.saldo_control?.saldo_base ?? saldoData?.saldo?.credit ?? 0);
-const saldoReservado = Number(saldoData?.saldo_control?.saldo_reservado ?? 0);
-const saldoDisponible = Number(
-  saldoData?.saldo_control?.saldo_disponible ?? (saldoBase - saldoReservado)
-);
+const tieneSaldoCuenta = saldoData?.saldo?.disponible !== undefined || (saldoData?.saldo_cuenta !== null && saldoData?.saldo_cuenta !== undefined);
+const saldoDisponible = saldoData?.saldo?.disponible !== undefined
+  ? Number(saldoData.saldo.disponible)
+  : (saldoData?.saldo_cuenta?.disponible !== undefined ? Number(saldoData.saldo_cuenta.disponible) : null);
+const saldoReservado = saldoData?.saldo?.reservado !== undefined
+  ? Number(saldoData.saldo.reservado)
+  : (saldoData?.saldo_cuenta?.reservado !== undefined ? Number(saldoData.saldo_cuenta.reservado) : 0);
+const saldoBase = tieneSaldoCuenta ? (saldoData?.saldo_cuenta?.base !== undefined ? Number(saldoData.saldo_cuenta.base) : saldoDisponible) : null;
+const creditoConmutador = Number(saldoData?.credito_conmutador ?? saldoData?.saldo?.disponible ?? saldoData?.saldo?.credit ?? 0);
+const tieneSaldoValido = saldoDisponible !== null && !isNaN(saldoDisponible);
+const monedaSaldo = saldoData?.moneda || 'MXN';
 
 // Condición estricta: SOLO "no tiene servicios" (extensiones, troncales y dids activos vacíos).
 // El saldo NO interviene en la decisión.
@@ -465,7 +471,7 @@ const sinServiciosAprovisionados = sinServiciosActivos;
         </div>
         <div style="padding-top: 10px; border-top: 1px dashed #fcd34d; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
           <span>
-            Tu cuenta no tiene servicios activos.{saldoDisponible > 0 ? ` Tu saldo de $${saldoDisponible.toFixed(2)} MXN se conserva y se restablece si reactivas la cuenta.` : ''}
+            Tu cuenta no tiene servicios activos.{saldoDisponible !== null && saldoDisponible > 0 ? ` Tu saldo de $${saldoDisponible.toFixed(2)} MXN se conserva y se restablece si reactivas la cuenta.` : ''}
           </span>
           <button id="btnReactivar" style="background-color: #059669; color: #ffffff; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer;">
             Reactivar Cuenta
@@ -475,31 +481,26 @@ const sinServiciosAprovisionados = sinServiciosActivos;
       </div>
     )}
 
-    <!-- BLOQUE 1: Saldo Disponible -->
+    <!-- BLOQUE 1: Saldo -->
     <section class="card">
-      <h2 class="card-title">1. Saldo Disponible</h2>
+      <h2 class="card-title">1. Saldo</h2>
       <p class="card-desc">Consultado en tiempo real desde la puerta para el cliente {cliente}.</p>
       {saldoData ? (
-        <div class="saldo-grid">
+        tieneSaldoValido && saldoDisponible !== null ? (
           <div class="saldo-primary">
-            <div class="saldo-label">Saldo Disponible</div>
-            <div class="saldo-value">${saldoDisponible.toFixed(2)} <span style="font-size: 18px; font-weight: 400; color: var(--color-ash);">MXN</span></div>
+            <div class="saldo-label">Saldo</div>
+            <div class="saldo-value">${saldoDisponible.toFixed(2)} <span style="font-size: 18px; font-weight: 400; color: var(--color-ash);">{monedaSaldo}</span></div>
+            {saldoReservado > 0 && (
+              <div style="font-size: 13px; color: var(--color-ash); margin-top: 6px;">
+                Tienes ${saldoReservado.toFixed(2)} retenidos por una compra en curso
+              </div>
+            )}
           </div>
-          <div class="saldo-breakdown">
-            <div class="breakdown-row">
-              <span>Saldo Base:</span>
-              <span>${saldoBase.toFixed(4)} MXN</span>
-            </div>
-            <div class="breakdown-row">
-              <span>Saldo Reservado:</span>
-              <span>${saldoReservado.toFixed(4)} MXN</span>
-            </div>
-            <div class="breakdown-row">
-              <span>Crédito en Conmutador:</span>
-              <span>${Number(saldoData.saldo?.credit ?? 0).toFixed(4)} MXN</span>
-            </div>
+        ) : (
+          <div class="empty-state">
+            No hay saldo registrado para tu cuenta. Contacta a soporte.
           </div>
-        </div>
+        )
       ) : (
         <div class="empty-state">
           {sinServiciosAprovisionados
