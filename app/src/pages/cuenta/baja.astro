@@ -15,7 +15,9 @@ const headers = {
   'X-Authenticated-Client': cliente
 };
 
-let saldoDisponible = 0;
+let saldoDisponible: number | null = null;
+let saldoReservado: number | null = null;
+let monedaSaldo = 'MXN';
 let extensiones: any[] = [];
 let troncales: any[] = [];
 let dids: any[] = [];
@@ -38,9 +40,19 @@ try {
 
   if (resSaldo.ok && resSaldo.data?.ok) {
     const sData = resSaldo.data;
-    const base = Number(sData.saldo_control?.saldo_base ?? sData.saldo?.credit ?? 0);
-    const resv = Number(sData.saldo_control?.saldo_reservado ?? 0);
-    saldoDisponible = Number(sData.saldo_control?.saldo_disponible ?? (base - resv));
+    if (sData.saldo?.disponible !== undefined && sData.saldo?.disponible !== null) {
+      saldoDisponible = Number(sData.saldo.disponible);
+      saldoReservado = Number(sData.saldo.reservado ?? 0);
+    } else {
+      saldoDisponible = null;
+      saldoReservado = null;
+    }
+    if (sData.moneda) {
+      monedaSaldo = sData.moneda;
+    }
+  } else {
+    saldoDisponible = null;
+    saldoReservado = null;
   }
 
   if (resExt.ok && resExt.data?.ok) {
@@ -343,7 +355,7 @@ try {
             <span class="inventory-label">Saldo Disponible</span>
             <span class="inventory-consequence">→ se pierde, no se reembolsa</span>
           </div>
-          <span class="inventory-value">{saldoDisponible.toFixed(2)} MXN</span>
+          <span class="inventory-value">{saldoDisponible !== null && !isNaN(saldoDisponible) ? (saldoDisponible.toFixed(2) + ' ' + monedaSaldo) : 'No disponible'}</span>
         </div>
 
         <div class="inventory-item">

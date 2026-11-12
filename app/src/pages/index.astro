@@ -93,15 +93,12 @@ const errorConexionServicios =
 
 const estadoNoDisponible = Boolean(errorConexionServicios);
 
-const tieneSaldoCuenta = saldoData?.saldo?.disponible !== undefined || (saldoData?.saldo_cuenta !== null && saldoData?.saldo_cuenta !== undefined);
-const saldoDisponible = saldoData?.saldo?.disponible !== undefined
+const saldoDisponible = saldoData?.saldo?.disponible !== undefined && saldoData?.saldo?.disponible !== null
   ? Number(saldoData.saldo.disponible)
-  : (saldoData?.saldo_cuenta?.disponible !== undefined ? Number(saldoData.saldo_cuenta.disponible) : null);
-const saldoReservado = saldoData?.saldo?.reservado !== undefined
+  : null;
+const saldoReservado = saldoData?.saldo?.reservado !== undefined && saldoData?.saldo?.reservado !== null
   ? Number(saldoData.saldo.reservado)
-  : (saldoData?.saldo_cuenta?.reservado !== undefined ? Number(saldoData.saldo_cuenta.reservado) : 0);
-const saldoBase = tieneSaldoCuenta ? (saldoData?.saldo_cuenta?.base !== undefined ? Number(saldoData.saldo_cuenta.base) : saldoDisponible) : null;
-const creditoConmutador = Number(saldoData?.credito_conmutador ?? saldoData?.saldo?.disponible ?? saldoData?.saldo?.credit ?? 0);
+  : 0;
 const tieneSaldoValido = saldoDisponible !== null && !isNaN(saldoDisponible);
 const monedaSaldo = saldoData?.moneda || 'MXN';
 

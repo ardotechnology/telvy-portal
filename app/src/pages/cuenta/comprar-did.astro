@@ -48,22 +48,16 @@ try {
 
   if (resSaldo.ok && resSaldo.data) {
     const sData = resSaldo.data;
-    if (sData.saldo?.disponible !== undefined) {
+    if (sData.saldo?.disponible !== undefined && sData.saldo?.disponible !== null) {
       saldoDisponible = Number(sData.saldo.disponible);
       tieneSaldoCuenta = true;
-    } else if (sData.saldo_cuenta !== null && sData.saldo_cuenta !== undefined) {
-      saldoDisponible = Number(sData.saldo_cuenta.disponible);
-      tieneSaldoCuenta = true;
-    } else if (sData.saldo_control?.saldo_disponible !== undefined) {
-      saldoDisponible = Number(sData.saldo_control.saldo_disponible);
-      tieneSaldoCuenta = true;
-    } else if (sData.saldo?.credit !== undefined) {
-      saldoDisponible = Number(sData.saldo.credit);
-      tieneSaldoCuenta = true;
     } else {
-      saldoDisponible = 0;
+      saldoDisponible = null;
       tieneSaldoCuenta = false;
     }
+  } else {
+    saldoDisponible = null;
+    tieneSaldoCuenta = false;
   }
 
   if (resDids.ok && resDids.data?.ok) {
@@ -381,7 +375,7 @@ try {
           </p>
         </div>
         <div class="balance-badge">
-          Saldo Disponible: <strong id="lblSaldo">{(saldoDisponible ?? 0).toFixed(2)} MXN</strong>
+          Saldo Disponible: <strong id="lblSaldo">{saldoDisponible !== null && !isNaN(saldoDisponible) ? (saldoDisponible.toFixed(2) + ' MXN') : 'No disponible'}</strong>
         </div>
       </div>
 
@@ -562,7 +556,8 @@ try {
 
   <script>
     const appContainer = document.getElementById('comprarDidApp') as HTMLElement;
-    let saldoActual = parseFloat(appContainer?.dataset.saldoDisponible || '0');
+    const rawSaldo = appContainer?.dataset.saldoDisponible;
+    let saldoActual = (rawSaldo !== undefined && rawSaldo !== '' && rawSaldo !== 'null') ? parseFloat(rawSaldo) : NaN;
     let targetDid = '';
     let targetRegion = '';
     let targetPrecio = 0;
@@ -659,6 +654,15 @@ try {
 
           boxInsuficienteGeneral.style.display = 'none';
 
+          if (isNaN(saldoActual)) {
+            boxInsuficienteGeneral.style.display = 'block';
+            boxInsuficienteGeneral.innerHTML = `
+              <strong>Saldo no disponible:</strong> No fue posible consultar tu saldo en este momento. Por favor recarga la página o contacta a soporte.
+            `;
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            return;
+          }
+
           if (saldoActual < targetPrecio) {
             const faltante = (targetPrecio - saldoActual).toFixed(2);
             boxInsuficienteGeneral.style.display = 'block';
@@ -696,7 +700,7 @@ try {
     function validarFormularioModal() {
       const destinoValido = Boolean(selectDestino?.value);
       const textoValido = inputConfirm?.value.trim() === 'CONFIRMAR COMPRA';
-      btnSubmitPurchase.disabled = !(destinoValido && textoValido && saldoActual >= targetPrecio);
+      btnSubmitPurchase.disabled = !(destinoValido && textoValido && !isNaN(saldoActual) && saldoActual >= targetPrecio);
     }
 
     inputConfirm?.addEventListener('input', validarFormularioModal);
