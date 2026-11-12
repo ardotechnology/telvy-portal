@@ -431,13 +431,13 @@ try {
               didsIniciales.map((d: any) => (
                 <tr>
                   <td><strong>+{d.did}</strong></td>
-                  <td>{d.region || 'Nacional'}</td>
+                  <td>{d.region || 'Sin región asignada'}</td>
                   <td><span class="pill-price">${Number(d.precio).toFixed(2)} MXN</span></td>
                   <td style="text-align: right;">
                     <button
                       class="btn-action btn-reserve"
                       data-did={d.did}
-                      data-region={d.region}
+                      data-region={d.region || 'Sin región asignada'}
                       data-precio={d.precio}
                     >
                       Comprar
@@ -621,13 +621,13 @@ try {
         tbodyDids.innerHTML = data.dids.map((d: any) => `
           <tr>
             <td><strong>+${d.did}</strong></td>
-            <td>${d.region || 'Nacional'}</td>
+            <td>${d.region || 'Sin región asignada'}</td>
             <td><span class="pill-price">$${Number(d.precio).toFixed(2)} MXN</span></td>
             <td style="text-align: right;">
               <button
                 class="btn-action btn-reserve"
                 data-did="${d.did}"
-                data-region="${d.region || 'Nacional'}"
+                data-region="${d.region || 'Sin región asignada'}"
                 data-precio="${d.precio}"
               >
                 Comprar
@@ -654,7 +654,7 @@ try {
         btn.addEventListener('click', (e) => {
           const el = e.currentTarget as HTMLElement;
           targetDid = el.dataset.did || '';
-          targetRegion = el.dataset.region || 'Nacional';
+          targetRegion = el.dataset.region || 'Sin región asignada';
           targetPrecio = parseFloat(el.dataset.precio || '50');
 
           boxInsuficienteGeneral.style.display = 'none';
