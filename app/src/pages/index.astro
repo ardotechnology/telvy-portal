@@ -44,7 +44,7 @@ try {
     fetch(`${TELVY_GATE_URL}/v1/cliente/dids`, { headers })
       .then(async r => ({ ok: r.ok, status: r.status, data: await r.json().catch(() => ({})) }))
       .catch(e => { conexionFallida = true; return { ok: false, status: 0, data: { error: e.message } }; }),
-    fetch(`${TELVY_GATE_URL}/v1/cliente/avisos/pendientes`, { headers })
+    fetch(`${TELVY_GATE_URL}/v1/cliente/avisos`, { headers })
       .then(async r => ({ ok: r.ok, status: r.status, data: await r.json().catch(() => ({})) }))
       .catch(e => ({ ok: false, status: 0, data: { error: e.message } }))
   ]);
@@ -672,30 +672,64 @@ const sinServiciosAprovisionados = sinServiciosActivos;
       )}
     </section>
 
-    <!-- BLOQUE 5: Avisos del Outbox Pendientes -->
+    <!-- BLOQUE 5: Avisos y Notificaciones -->
     <section class="card">
-      <h2 class="card-title">5. Avisos del Outbox Pendientes</h2>
-      <p class="card-desc">Notificaciones generadas pendientes de emisión.</p>
-      {avisosData.length > 0 ? (
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 0.5rem;">
+        <h2 class="card-title" style="margin-bottom:0;">5. Avisos y Notificaciones</h2>
+        <a href="/cuenta/avisos" class="btn btn-secondary" style="font-size:0.8rem; padding:0.25rem 0.6rem;">Ver historial</a>
+      </div>
+      <p class="card-desc">Notificaciones generadas y eventos de tu cuenta.</p>
+      {errorAvisos ? (
+        <div class="empty-state" style="color: #f87171; border-color: rgba(248, 113, 113, 0.2);">
+          Estado no disponible — no se pudieron consultar tus avisos.
+        </div>
+      ) : avisosData.length > 0 ? (
         <div class="table-wrapper">
           <table>
             <thead>
               <tr>
                 <th>ID Aviso</th>
-                <th>Tipo de Notificación</th>
-                <th>Inactividad</th>
-                <th>Fecha Generación</th>
+                <th>Tipo</th>
+                <th>Mensaje</th>
+                <th>Fecha</th>
                 <th>Estado</th>
+                <th>Acción</th>
               </tr>
             </thead>
             <tbody>
               {avisosData.map((av: any) => (
                 <tr>
-                  <td><code>{av.id}</code></td>
+                  <td><code>{av.id.slice(0, 8)}...</code></td>
                   <td><strong>{av.tipo_aviso}</strong></td>
-                  <td>{av.dias_inactividad} días</td>
-                  <td>{new Date(av.created_at).toLocaleString('es-MX')}</td>
-                  <td><span class="pill pill-offline">Pendiente</span></td>
+                  <td style="max-width: 360px; word-break: break-word;">
+                    <div>{av.texto}</div>
+                    {av.password && (
+                      <div style="margin-top:0.35rem; font-family:monospace; font-size:0.8rem; background:#f1f5f9; padding:0.2rem 0.5rem; border-radius:4px; display:inline-block;">
+                        Contraseña: <strong>{av.password}</strong>
+                      </div>
+                    )}
+                  </td>
+                  <td>{av.created_at ? new Date(av.created_at).toLocaleString('es-MX') : '-'}</td>
+                  <td>
+                    {av.estado === 'pendiente' ? (
+                      <span class="pill pill-offline">Pendiente</span>
+                    ) : (
+                      <span class="pill pill-online">Confirmado</span>
+                    )}
+                  </td>
+                  <td>
+                    {av.tipo_aviso === 'reactivacion_password' && av.estado === 'pendiente' ? (
+                      <button 
+                        class="btn btn-primary btn-sm btn-confirmar-aviso" 
+                        data-aviso-id={av.id}
+                        style="font-size:0.75rem; padding:0.25rem 0.5rem;"
+                      >
+                        He guardado mi contraseña
+                      </button>
+                    ) : (
+                      <span style="color:#64748b; font-size:0.8rem;">—</span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -703,7 +737,7 @@ const sinServiciosAprovisionados = sinServiciosActivos;
         </div>
       ) : (
         <div class="empty-state">
-          No disponible — pendiente de implementar
+          No tienes avisos pendientes.
         </div>
       )}
     </section>
@@ -785,6 +819,34 @@ const sinServiciosAprovisionados = sinServiciosActivos;
         }
         btnReactivar.disabled = false;
       }
+    });
+
+    document.querySelectorAll('.btn-confirmar-aviso').forEach((btn: any) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-aviso-id');
+        if (!id) return;
+        btn.disabled = true;
+        btn.textContent = 'Confirmando...';
+        try {
+          const res = await fetch('/api/cuenta/avisos/recibido', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ aviso_id: id })
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.ok && data.ok) {
+            window.location.reload();
+          } else {
+            alert('Error confirmando aviso: ' + (data.error || 'Fallo desconocido'));
+            btn.disabled = false;
+            btn.textContent = 'He guardado mi contraseña';
+          }
+        } catch (e: any) {
+          alert('Error de conexión: ' + e.message);
+          btn.disabled = false;
+          btn.textContent = 'He guardado mi contraseña';
+        }
+      });
     });
   </script>
 </body>

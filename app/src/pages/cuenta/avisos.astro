@@ -1,0 +1,354 @@
+---
+// Verificación estricta de sesión: cliente proviene SOLO del servidor/sesión
+const user = Astro.locals.user;
+if (!user) {
+  return Astro.redirect('/login');
+}
+const cliente = Astro.locals.portalCuenta?.cliente;
+if (!cliente) {
+  return Astro.redirect('/cuenta-no-vinculada');
+}
+
+const TELVY_GATE_URL = process.env.TELVY_GATE_URL || 'http://host.docker.internal:4100';
+const CLIENT_API_INTERNAL_KEY = process.env.CLIENT_API_INTERNAL_KEY || '';
+
+const headers = {
+  'X-Internal-Key': CLIENT_API_INTERNAL_KEY,
+  'X-Authenticated-Client': cliente
+};
+
+let avisos: any[] = [];
+let errorAvisos: string | null = null;
+
+try {
+  const res = await fetch(`${TELVY_GATE_URL}/v1/cliente/avisos`, { headers });
+  if (res.ok) {
+    const data = await res.json().catch(() => ({}));
+    if (data.ok && Array.isArray(data.avisos)) {
+      avisos = data.avisos;
+    } else {
+      errorAvisos = data.error || `Error ${res.status}`;
+    }
+  } else {
+    errorAvisos = `HTTP ${res.status}`;
+  }
+} catch (err: any) {
+  errorAvisos = err.message || 'Error de conexión con la puerta';
+}
+---
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Avisos y Notificaciones — Portal Telvy</title>
+  <style>
+    :root {
+      --color-highlighter-yellow: #e4f222;
+      --color-ink: #0c0a08;
+      --color-obsidian: #1a1919;
+      --color-paper: #ffffff;
+      --color-bone: #f4f2f0;
+      --color-ash: #6d6c6b;
+      --color-hairline: #e5e7eb;
+      --color-smoke: #e0deda;
+      --color-danger: #dc2626;
+      --color-danger-bg: #fef2f2;
+      --color-danger-border: #fecaca;
+      --color-success: #16a34a;
+      --color-success-bg: #f0fdf4;
+      --color-success-border: #bbf7d0;
+      --radius-card: 14px;
+      --radius-pill: 9999px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--color-bone);
+      color: var(--color-ink);
+      line-height: 1.5;
+      padding: 2rem 1rem;
+    }
+
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+    }
+
+    header {
+      margin-bottom: 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    h1 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: var(--color-ash);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 500;
+    }
+
+    .back-link:hover {
+      color: var(--color-ink);
+    }
+
+    .card {
+      background: var(--color-paper);
+      border: 1px solid var(--color-hairline);
+      border-radius: var(--radius-card);
+      padding: 1.5rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+      margin-bottom: 2rem;
+    }
+
+    .card-title {
+      font-size: 1.15rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+
+    .card-desc {
+      color: var(--color-ash);
+      font-size: 0.9rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .table-wrapper {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.9rem;
+    }
+
+    th {
+      background-color: #f8fafc;
+      padding: 0.75rem 1rem;
+      font-weight: 600;
+      border-bottom: 1px solid var(--color-hairline);
+      color: var(--color-ash);
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    td {
+      padding: 1rem;
+      border-bottom: 1px solid var(--color-hairline);
+      vertical-align: middle;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 0.2rem 0.6rem;
+      border-radius: var(--radius-pill);
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .pill-offline {
+      background-color: #fef3c7;
+      color: #92400e;
+    }
+
+    .pill-online {
+      background-color: var(--color-success-bg);
+      color: var(--color-success);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.4rem 0.8rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      transition: all 0.15s ease;
+      text-decoration: none;
+    }
+
+    .btn-primary {
+      background-color: var(--color-ink);
+      color: var(--color-paper);
+    }
+
+    .btn-primary:hover {
+      background-color: var(--color-obsidian);
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .empty-state {
+      padding: 2.5rem;
+      text-align: center;
+      color: var(--color-ash);
+      border: 1px dashed var(--color-smoke);
+      border-radius: 8px;
+      font-size: 0.95rem;
+    }
+
+    .empty-error {
+      color: var(--color-danger);
+      background-color: var(--color-danger-bg);
+      border-color: var(--color-danger-border);
+    }
+
+    .secret-box {
+      margin-top: 0.5rem;
+      padding: 0.5rem 0.75rem;
+      background: #f1f5f9;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 0.85rem;
+      color: #0f172a;
+      display: inline-block;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <a href="/" class="back-link">← Volver al inicio</a>
+        <h1 style="margin-top: 0.5rem;">Avisos y Notificaciones</h1>
+      </div>
+      <div>
+        <span style="font-size: 0.85rem; color: var(--color-ash);">Cliente: <strong>{cliente}</strong></span>
+      </div>
+    </header>
+
+    <section class="card">
+      <h2 class="card-title">Historial de Avisos de la Cuenta</h2>
+      <p class="card-desc">Eventos de seguridad, reactivaciones y avisos operativos de tus líneas y servicios.</p>
+
+      {errorAvisos ? (
+        <div class="empty-state empty-error">
+          Estado no disponible — no se pudieron consultar tus avisos.
+        </div>
+      ) : avisos.length > 0 ? (
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Tipo</th>
+                <th>Mensaje y Datos</th>
+                <th>Fecha</th>
+                <th>Estado</th>
+                <th>Acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              {avisos.map((av: any) => (
+                <tr>
+                  <td>
+                    <strong>{av.tipo_aviso}</strong>
+                    {av.dias_inactividad > 0 && (
+                      <div style="font-size: 0.75rem; color: var(--color-ash);">{av.dias_inactividad} días de inactividad</div>
+                    )}
+                  </td>
+                  <td style="max-width: 420px; word-break: break-word;">
+                    <div>{av.texto}</div>
+                    {av.password && (
+                      <div class="secret-box">
+                        Contraseña: <strong>{av.password}</strong>
+                      </div>
+                    )}
+                  </td>
+                  <td>{av.created_at ? new Date(av.created_at).toLocaleString('es-MX') : '-'}</td>
+                  <td>
+                    {av.estado === 'pendiente' ? (
+                      <span class="pill pill-offline">Pendiente</span>
+                    ) : (
+                      <span class="pill pill-online">Confirmado</span>
+                    )}
+                  </td>
+                  <td>
+                    {av.tipo_aviso === 'reactivacion_password' && av.estado === 'pendiente' ? (
+                      <button 
+                        class="btn btn-primary btn-confirmar-aviso" 
+                        data-aviso-id={av.id}
+                      >
+                        He guardado mi contraseña
+                      </button>
+                    ) : (
+                      <span style="color: var(--color-ash); font-size: 0.85rem;">—</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div class="empty-state">
+          No tienes avisos pendientes.
+        </div>
+      )}
+    </section>
+  </div>
+
+  <script>
+    document.querySelectorAll('.btn-confirmar-aviso').forEach((btn: any) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-aviso-id');
+        if (!id) return;
+        btn.disabled = true;
+        btn.textContent = 'Confirmando...';
+        try {
+          const res = await fetch('/api/cuenta/avisos/recibido', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ aviso_id: id })
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.ok && data.ok) {
+            window.location.reload();
+          } else {
+            alert('Error confirmando aviso: ' + (data.error || 'Fallo desconocido'));
+            btn.disabled = false;
+            btn.textContent = 'He guardado mi contraseña';
+          }
+        } catch (e: any) {
+          alert('Error de conexión: ' + e.message);
+          btn.disabled = false;
+          btn.textContent = 'He guardado mi contraseña';
+        }
+      });
+    });
+  </script>
+</body>
+</html>
