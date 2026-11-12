@@ -1,4 +1,6 @@
 ---
+import { formatearPildoraEstado } from '../lib/estado_pill';
+
 // Verificación de sesión: el cliente se obtiene EXCLUSIVAMENTE de la sesión autenticada en el servidor.
 const cliente = Astro.locals.portalCuenta?.cliente;
 const userEmail = Astro.locals.user?.email || '';
@@ -111,28 +113,6 @@ const sinServiciosActivos =
   didsActivos.length === 0;
 
 const sinServiciosAprovisionados = sinServiciosActivos;
-
-function formatPillStatus(tipo: 'ext' | 'trk', online: boolean, rawStatus?: string) {
-  const str = String(rawStatus || '').trim();
-  const latencyMatch = str.match(/(\d+\s*ms)/i);
-  const latency = latencyMatch ? latencyMatch[1] : null;
-
-  const isUnknown = !str || /unknown|unregistered/i.test(str);
-  const isBareOk = str.toUpperCase() === 'OK';
-
-  const baseLabel = tipo === 'ext'
-    ? (online ? 'Registrada' : 'Desconectada')
-    : (online ? 'En línea' : 'Sin respuesta');
-
-  let subtext = '';
-  if (latency) {
-    subtext = latency;
-  } else if (isBareOk || isUnknown) {
-    subtext = 'sin verificar';
-  }
-
-  return { label: baseLabel, subtext };
-}
 ---
 
 <!DOCTYPE html>
@@ -560,12 +540,12 @@ function formatPillStatus(tipo: 'ext' | 'trk', online: boolean, rawStatus?: stri
                   <td>{ext.callerid || 'Sin CallerID'}</td>
                   <td>
                     {(() => {
-                      const st = formatPillStatus('ext', ext.online, ext.lineStatus);
+                      const st = formatearPildoraEstado('ext', ext.online, ext.lineStatus);
                       return (
-                        <span class={`pill ${ext.online ? 'pill-online' : 'pill-offline'}`}>
+                        <span class={`pill ${st.clase}`}>
                           <span class="pill-dot"></span>
-                          <span>{st.label}</span>
-                          {st.subtext && <span class="pill-meta">· {st.subtext}</span>}
+                          <span>{st.texto}</span>
+                          {st.meta && <span class="pill-meta">· {st.meta}</span>}
                         </span>
                       );
                     })()}
@@ -607,12 +587,12 @@ function formatPillStatus(tipo: 'ext' | 'trk', online: boolean, rawStatus?: stri
                   <td>{trk.max_channels} canales</td>
                   <td>
                     {(() => {
-                      const st = formatPillStatus('trk', trk.online, trk.lineStatus);
+                      const st = formatearPildoraEstado('trk', trk.online, trk.lineStatus);
                       return (
-                        <span class={`pill ${trk.online ? 'pill-online' : 'pill-offline'}`}>
+                        <span class={`pill ${st.clase}`}>
                           <span class="pill-dot"></span>
-                          <span>{st.label}</span>
-                          {st.subtext && <span class="pill-meta">· {st.subtext}</span>}
+                          <span>{st.texto}</span>
+                          {st.meta && <span class="pill-meta">· {st.meta}</span>}
                         </span>
                       );
                     })()}

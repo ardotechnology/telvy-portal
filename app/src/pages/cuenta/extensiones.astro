@@ -1,4 +1,6 @@
 ---
+import { formatearPildoraEstado } from '../../lib/estado_pill';
+
 // Verificación estricta de sesión: cliente proviene SOLO del servidor/sesión
 const cliente = Astro.locals.portalCuenta?.cliente;
 const userEmail = Astro.locals.user?.email || '';
@@ -174,6 +176,12 @@ try {
       height: 6px;
       border-radius: 50%;
       background-color: currentColor;
+    }
+
+    .pill-meta {
+      font-size: 11px;
+      opacity: 0.85;
+      font-weight: 500;
     }
 
     .btn-action {
@@ -383,11 +391,16 @@ try {
                   <td><code>{ext.host}</code></td>
                   <td>{ext.callerid || 'Sin CallerID'}</td>
                   <td>
-                    <span class={`pill ${ext.online ? 'pill-online' : 'pill-offline'}`}>
-                      <span class="pill-dot"></span>
-                      <span>{ext.online ? 'En Línea' : 'Desconectada'}</span>
-                      {ext.lineStatus && <span style="font-size: 11px; opacity: 0.85;">· {ext.lineStatus}</span>}
-                    </span>
+                    {(() => {
+                      const st = formatearPildoraEstado('ext', ext.online, ext.lineStatus);
+                      return (
+                        <span class={`pill ${st.clase}`}>
+                          <span class="pill-dot"></span>
+                          <span>{st.texto}</span>
+                          {st.meta && <span class="pill-meta">· {st.meta}</span>}
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td>
                     <button
@@ -678,3 +691,4 @@ try {
   </script>
 </body>
 </html>
+
