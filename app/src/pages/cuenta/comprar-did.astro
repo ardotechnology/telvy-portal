@@ -746,9 +746,11 @@ try {
             if (checkData.estado === 'fallido' || checkData.estado === 'compensado' || checkData.terminal) {
               clearInterval(interval);
               modalStatusBox.className = 'status-area error';
+              const errorTexto = checkData.estado === 'compensado'
+                ? (checkData.error_publico || 'No se pudo cobrar el saldo. No se te ha hecho ningún cargo y tu saldo sigue intacto.')
+                : (checkData.error_publico || 'No se pudo completar el aprovisionamiento. Si hubo cobro, quedó registrado para revisión de soporte.');
               modalStatusBox.innerHTML = `
-                <div><strong>No se pudo completar el aprovisionamiento.</strong></div>
-                <div style="font-size: 13px; margin-top: 4px;">El importe cobrado quedó registrado para intervención de soporte.</div>
+                <div><strong>${errorTexto}</strong></div>
                 <div style="margin-top: 10px;">
                   <button class="btn-secondary" onclick="window.location.reload()">Cerrar</button>
                 </div>

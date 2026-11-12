@@ -68,13 +68,42 @@ export const POST: APIRoute = async ({ request, locals }) => {
     });
 
     const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      const rawError = data?.error || data?.resultado || `Error HTTP ${res.status}`;
+      console.error(`[portal-confirmar-did] Error del motor al confirmar DID '${did}' para cliente '${cliente}':`, rawError, data);
+
+      let publicError = 'No se pudo completar la compra del número.';
+      const rawLower = String(rawError).toLowerCase();
+
+      if (rawLower.includes('conmutador') || rawLower.includes('descuento') || rawLower.includes('cobro')) {
+        publicError = 'No se pudo cobrar el saldo. No se te ha hecho ningún cargo y tu saldo sigue intacto.';
+      } else if (rawLower.includes('expirad') || res.status === 410) {
+        publicError = 'La reserva expiró. Vuelve a intentarlo.';
+      } else if (rawLower.includes('insuficiente') || res.status === 402) {
+        publicError = 'Tu saldo no alcanza para esta compra.';
+      } else if (rawLower.includes('no disponible') || rawLower.includes('carrera') || res.status === 409) {
+        publicError = 'El número ya no está disponible.';
+      } else if (rawLower.includes('ajena') || rawLower.includes('prohibido') || res.status === 403) {
+        publicError = 'El número no está reservado para tu cuenta.';
+      } else if (data?.error && typeof data.error === 'string' && !data.error.includes(':') && data.error.length < 80) {
+        publicError = data.error;
+      }
+
+      return new Response(JSON.stringify({ ok: false, error: publicError }), {
+        status: res.status,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
     return new Response(JSON.stringify(data), {
       status: res.status,
       headers: { 'Content-Type': 'application/json' }
     });
   } catch (err: any) {
+    console.error(`[portal-confirmar-did] Excepción de conexión al confirmar DID '${did}':`, err.message);
     return new Response(
-      JSON.stringify({ ok: false, error: 'Error de conexión con el conmutador' }),
+      JSON.stringify({ ok: false, error: 'No se pudo comunicar con el servicio de telefonía. Por favor intenta más tarde.' }),
       { status: 502, headers: { 'Content-Type': 'application/json' } }
     );
   }
