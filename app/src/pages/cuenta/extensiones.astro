@@ -520,7 +520,7 @@ try {
       const valText = inputConfirm.value.trim();
       const pwd = inputPassword.value.trim();
       const matchesPhrase = valText === 'CAMBIAR CONTRASEÑA';
-      btnSubmit.disabled = !(matchesPhrase && pwd.length >= 12);
+      btnSubmit.disabled = !(matchesPhrase && pwd.length > 0);
     }
 
     function generateSecurePassword(): string {
@@ -568,7 +568,11 @@ try {
     });
 
     inputConfirm?.addEventListener('input', checkFormValidity);
-    inputPassword?.addEventListener('input', checkFormValidity);
+    inputPassword?.addEventListener('input', () => {
+      pwdError.style.display = 'none';
+      pwdError.textContent = '';
+      checkFormValidity();
+    });
 
     function closeModal() {
       modal.style.display = 'none';
@@ -584,10 +588,11 @@ try {
     // Enviar solicitud de cambio
     btnSubmit?.addEventListener('click', async () => {
       const password = inputPassword.value.trim();
-      
-      // Validación previa
-      if (password.length < 12 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
-        pwdError.textContent = 'La contraseña debe tener mínimo 12 caracteres, mayúscula, minúscula, número y símbolo.';
+      pwdError.style.display = 'none';
+      pwdError.textContent = '';
+
+      if (!password) {
+        pwdError.textContent = 'Ingresa una nueva contraseña.';
         pwdError.style.display = 'block';
         return;
       }
@@ -611,17 +616,10 @@ try {
         const data = await res.json().catch(() => ({}));
 
         if (!res.ok) {
-          statusBox.className = 'status-area error';
-          statusBox.innerHTML = `
-            <div><strong>Error:</strong> ${data.error || 'No se pudo procesar la solicitud'}</div>
-            <div style="margin-top: 10px;">
-              <button id="btnRetryError" class="btn-secondary" style="font-size: 12px; padding: 4px 10px;">Volver a intentar</button>
-            </div>
-          `;
-          document.getElementById('btnRetryError')?.addEventListener('click', () => {
-            statusBox.style.display = 'none';
-            formSection.style.display = 'block';
-          });
+          statusBox.style.display = 'none';
+          formSection.style.display = 'block';
+          pwdError.textContent = data.error || 'No se pudo procesar la solicitud';
+          pwdError.style.display = 'block';
           return;
         }
 
