@@ -1,0 +1,680 @@
+---
+// Verificación estricta de sesión: cliente proviene SOLO del servidor/sesión
+const cliente = Astro.locals.portalCuenta?.cliente;
+const userEmail = Astro.locals.user?.email || '';
+
+if (!cliente) {
+  return Astro.redirect('/cuenta-no-vinculada');
+}
+
+const TELVY_GATE_URL = process.env.TELVY_GATE_URL || 'http://host.docker.internal:4100';
+const CLIENT_API_INTERNAL_KEY = process.env.CLIENT_API_INTERNAL_KEY || '';
+
+const headers = {
+  'X-Internal-Key': CLIENT_API_INTERNAL_KEY,
+  'X-Authenticated-Client': cliente
+};
+
+let extensiones: any[] = [];
+let motorError: string | null = null;
+
+try {
+  const resExt = await fetch(`${TELVY_GATE_URL}/v1/cliente/extensiones`, { headers });
+  if (resExt.ok) {
+    const data = await resExt.json().catch(() => ({}));
+    if (data.ok && Array.isArray(data.extensiones)) {
+      extensiones = data.extensiones;
+    }
+  } else {
+    motorError = 'No se pudieron cargar las extensiones desde el conmutador';
+  }
+} catch (err: any) {
+  motorError = 'Error de conexión con el servicio de telefonía';
+}
+---
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gestión de Extensiones — Portal Telvy</title>
+  <style>
+    :root {
+      --color-highlighter-yellow: #e4f222;
+      --color-ink: #0c0a08;
+      --color-obsidian: #1a1919;
+      --color-paper: #ffffff;
+      --color-bone: #f4f2f0;
+      --color-ash: #6d6c6b;
+      --color-hairline: #e5e7eb;
+      --color-smoke: #e0deda;
+      --color-danger: #dc2626;
+      --color-danger-bg: #fef2f2;
+      --color-danger-border: #fecaca;
+      --color-success: #16a34a;
+      --color-success-bg: #f0fdf4;
+      --color-success-border: #bbf7d0;
+      --radius-card: 14px;
+      --radius-sm: 6px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--color-bone);
+      color: var(--color-ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      line-height: 1.5;
+      padding: 24px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 840px;
+    }
+
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+    }
+
+    .top-link {
+      font-size: 14px;
+      color: var(--color-ash);
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .top-link:hover {
+      color: var(--color-ink);
+      text-decoration: underline;
+    }
+
+    .card {
+      background: var(--color-paper);
+      border-radius: var(--radius-card);
+      border: 1px solid var(--color-smoke);
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+    }
+
+    h1 {
+      font-size: 24px;
+      font-weight: 700;
+      margin-bottom: 6px;
+      letter-spacing: -0.5px;
+    }
+
+    p.subtitle {
+      font-size: 14px;
+      color: var(--color-ash);
+      margin-bottom: 20px;
+    }
+
+    .table-wrapper {
+      overflow-x: auto;
+      margin-top: 12px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 14px;
+    }
+
+    th {
+      background-color: var(--color-bone);
+      color: var(--color-ash);
+      font-weight: 600;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--color-smoke);
+    }
+
+    td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--color-hairline);
+      vertical-align: middle;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 999px;
+    }
+
+    .pill-online {
+      background-color: #dcfce7;
+      color: #15803d;
+    }
+
+    .pill-offline {
+      background-color: #f3f4f6;
+      color: #6b7280;
+    }
+
+    .pill-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background-color: currentColor;
+    }
+
+    .btn-action {
+      background: var(--color-obsidian);
+      color: var(--color-paper);
+      border: none;
+      padding: 8px 14px;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    .btn-action:hover {
+      opacity: 0.9;
+    }
+
+    .btn-secondary {
+      background: var(--color-bone);
+      color: var(--color-ink);
+      border: 1px solid var(--color-smoke);
+      padding: 8px 14px;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .btn-secondary:hover {
+      background: #e5e5e5;
+    }
+
+    .empty-state {
+      padding: 32px;
+      text-align: center;
+      color: var(--color-ash);
+      background-color: var(--color-bone);
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+    }
+
+    /* Modal / Formulario de Cambio de Password */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(12, 10, 8, 0.6);
+      backdrop-filter: blur(2px);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+
+    .modal-card {
+      background: var(--color-paper);
+      border-radius: var(--radius-card);
+      width: 100%;
+      max-width: 520px;
+      padding: 24px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+    }
+
+    .warning-box {
+      background: var(--color-danger-bg);
+      border: 1px solid var(--color-danger-border);
+      color: var(--color-danger);
+      padding: 14px;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      line-height: 1.45;
+      margin-bottom: 18px;
+    }
+
+    .rule-box {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      color: #1e40af;
+      padding: 12px;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      line-height: 1.4;
+      margin-bottom: 16px;
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: var(--color-ink);
+    }
+
+    .input-with-button {
+      display: flex;
+      gap: 8px;
+    }
+
+    .text-input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--color-smoke);
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      outline: none;
+      font-family: inherit;
+    }
+
+    .text-input:focus {
+      border-color: var(--color-ink);
+    }
+
+    .status-area {
+      padding: 14px;
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      margin-top: 16px;
+      display: none;
+    }
+
+    .status-area.loading {
+      display: block;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      color: #1e40af;
+    }
+
+    .status-area.error {
+      display: block;
+      background: var(--color-danger-bg);
+      border: 1px solid var(--color-danger-border);
+      color: var(--color-danger);
+    }
+
+    .status-area.success {
+      display: block;
+      background: var(--color-success-bg);
+      border: 1px solid var(--color-success-border);
+      color: var(--color-success);
+    }
+
+    .password-display-card {
+      background: #f8fafc;
+      border: 2px dashed #0284c7;
+      padding: 16px;
+      border-radius: var(--radius-sm);
+      margin: 16px 0;
+      text-align: center;
+    }
+
+    .password-value {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+      font-size: 18px;
+      font-weight: 700;
+      color: #0369a1;
+      letter-spacing: 1px;
+      margin: 8px 0;
+      padding: 8px;
+      background: #ffffff;
+      border: 1px solid #bae6fd;
+      border-radius: 4px;
+      user-select: all;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="top-bar">
+      <a href="/" class="top-link">← Volver al Panel</a>
+      <span style="font-size: 13px; color: var(--color-ash);">Cliente: <strong>{cliente}</strong> ({userEmail})</span>
+    </div>
+
+    <main class="card">
+      <h1>Extensiones SIP</h1>
+      <p class="subtitle">Gestiona las líneas telefónicas de tu cuenta y actualiza sus credenciales de acceso para softphones.</p>
+
+      {motorError && (
+        <div class="warning-box" style="margin-bottom: 16px;">
+          <strong>Aviso:</strong> {motorError}. Intente recargar en unos momentos.
+        </div>
+      )}
+
+      {extensiones.length > 0 ? (
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Extensión</th>
+                <th>Host</th>
+                <th>CallerID</th>
+                <th>Línea / Registro</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {extensiones.map((ext: any) => (
+                <tr>
+                  <td><strong>{ext.name}</strong></td>
+                  <td><code>{ext.host}</code></td>
+                  <td>{ext.callerid || 'Sin CallerID'}</td>
+                  <td>
+                    <span class={`pill ${ext.online ? 'pill-online' : 'pill-offline'}`}>
+                      <span class="pill-dot"></span>
+                      <span>{ext.online ? 'En Línea' : 'Desconectada'}</span>
+                      {ext.lineStatus && <span style="font-size: 11px; opacity: 0.85;">· {ext.lineStatus}</span>}
+                    </span>
+                  </td>
+                  <td>
+                    <button
+                      class="btn-action btn-open-modal"
+                      data-ext={ext.name}
+                    >
+                      Cambiar contraseña
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div class="empty-state">
+          {motorError ? 'Estado no disponible.' : `El cliente ${cliente} no tiene extensiones asignadas actualmente.`}
+        </div>
+      )}
+    </main>
+
+    <!-- Modal de Cambio de Contraseña -->
+    <div id="modalPassword" class="modal-overlay">
+      <div class="modal-card">
+        <h2 style="font-size: 18px; font-weight: 700; margin-bottom: 4px;">Cambiar Contraseña de Extensión</h2>
+        <p style="font-size: 13px; color: var(--color-ash); margin-bottom: 16px;">
+          Extensión: <strong id="modalExtName" style="color: var(--color-ink);">-</strong>
+        </p>
+
+        <!-- Formulario Inicial -->
+        <div id="formSection">
+          <div class="warning-box">
+            ⚠️ <strong>Advertencia importante:</strong> Tu teléfono o softphone dejará de funcionar hasta que configures la contraseña nueva. Si tienes llamadas en curso, se cortarán.
+          </div>
+
+          <div class="rule-box">
+            <strong>Regla de seguridad:</strong> Mínimo 12 caracteres, con mayúscula, minúscula, número y símbolo. El conmutador admite hasta 80.
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Nueva Contraseña:</label>
+            <div class="input-with-button">
+              <input
+                id="inputNewPassword"
+                type="text"
+                class="text-input"
+                placeholder="Ingresa la nueva contraseña..."
+                autocomplete="off"
+              />
+              <button id="btnGenerate" type="button" class="btn-secondary" style="white-space: nowrap;">
+                Generar una segura
+              </button>
+            </div>
+            <div id="pwdError" style="color: var(--color-danger); font-size: 12px; margin-top: 4px; display: none;"></div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">
+              Para confirmar, escribe <code style="background: var(--color-bone); padding: 2px 6px; border-radius: 4px; font-weight: 700;">CAMBIAR CONTRASEÑA</code>:
+            </label>
+            <input
+              id="inputConfirmText"
+              type="text"
+              class="text-input"
+              placeholder="CAMBIAR CONTRASEÑA"
+              autocomplete="off"
+            />
+          </div>
+
+          <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+            <button id="btnCancelModal" type="button" class="btn-secondary">Cancelar</button>
+            <button id="btnSubmitChange" type="button" class="btn-action" disabled>Confirmar Cambio</button>
+          </div>
+        </div>
+
+        <!-- Área de Estado y Resultados -->
+        <div id="statusBox" class="status-area"></div>
+
+        <!-- Vista de Éxito con Contraseña Revelada UNA VEZ -->
+        <div id="successCard" style="display: none; margin-top: 16px;">
+          <div class="password-display-card">
+            <div style="font-size: 13px; font-weight: 600; color: #0369a1;">Tu nueva contraseña es:</div>
+            <div id="displayPassword" class="password-value">-</div>
+            <p style="font-size: 12px; color: var(--color-ash); margin-top: 6px;">
+              <strong>Cópiala ahora. No se puede volver a mostrar.</strong><br />
+              Úsala para reconfigurar tu softphone.
+            </p>
+          </div>
+          <div style="text-align: right; margin-top: 16px;">
+            <button id="btnCloseSuccess" type="button" class="btn-action">Aceptar y Cerrar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Lógica client-side
+    const modal = document.getElementById('modalPassword') as HTMLElement;
+    const modalExtName = document.getElementById('modalExtName') as HTMLElement;
+    const formSection = document.getElementById('formSection') as HTMLElement;
+    const inputPassword = document.getElementById('inputNewPassword') as HTMLInputElement;
+    const btnGenerate = document.getElementById('btnGenerate') as HTMLButtonElement;
+    const inputConfirm = document.getElementById('inputConfirmText') as HTMLInputElement;
+    const btnSubmit = document.getElementById('btnSubmitChange') as HTMLButtonElement;
+    const btnCancel = document.getElementById('btnCancelModal') as HTMLButtonElement;
+    const pwdError = document.getElementById('pwdError') as HTMLElement;
+    const statusBox = document.getElementById('statusBox') as HTMLElement;
+    const successCard = document.getElementById('successCard') as HTMLElement;
+    const displayPassword = document.getElementById('displayPassword') as HTMLElement;
+    const btnCloseSuccess = document.getElementById('btnCloseSuccess') as HTMLButtonElement;
+
+    let targetExtension = '';
+    let pendingPasswordValue = '';
+
+    function checkFormValidity() {
+      const valText = inputConfirm.value.trim();
+      const pwd = inputPassword.value.trim();
+      const matchesPhrase = valText === 'CAMBIAR CONTRASEÑA';
+      btnSubmit.disabled = !(matchesPhrase && pwd.length >= 12);
+    }
+
+    function generateSecurePassword(): string {
+      const uppers = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+      const lowers = 'abcdefghijkmnopqrstuvwxyz';
+      const digits = '23456789';
+      const symbols = '!@#$%^&*_-+=';
+      const all = uppers + lowers + digits + symbols;
+      
+      let pass = '';
+      pass += uppers[Math.floor(Math.random() * uppers.length)];
+      pass += lowers[Math.floor(Math.random() * lowers.length)];
+      pass += digits[Math.floor(Math.random() * digits.length)];
+      pass += symbols[Math.floor(Math.random() * symbols.length)];
+      
+      for (let i = 4; i < 16; i++) {
+        pass += all[Math.floor(Math.random() * all.length)];
+      }
+      return pass.split('').sort(() => 0.5 - Math.random()).join('');
+    }
+
+    // Abrir modal al presionar "Cambiar contraseña"
+    document.querySelectorAll('.btn-open-modal').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const el = e.currentTarget as HTMLElement;
+        targetExtension = el.dataset.ext || '';
+        modalExtName.textContent = targetExtension;
+        inputPassword.value = '';
+        inputConfirm.value = '';
+        pwdError.style.display = 'none';
+        pwdError.textContent = '';
+        statusBox.style.display = 'none';
+        successCard.style.display = 'none';
+        formSection.style.display = 'block';
+        btnSubmit.disabled = true;
+        modal.style.display = 'flex';
+      });
+    });
+
+    btnGenerate?.addEventListener('click', () => {
+      const generated = generateSecurePassword();
+      inputPassword.value = generated;
+      pwdError.style.display = 'none';
+      checkFormValidity();
+    });
+
+    inputConfirm?.addEventListener('input', checkFormValidity);
+    inputPassword?.addEventListener('input', checkFormValidity);
+
+    function closeModal() {
+      modal.style.display = 'none';
+      pendingPasswordValue = '';
+    }
+
+    btnCancel?.addEventListener('click', closeModal);
+    btnCloseSuccess?.addEventListener('click', () => {
+      closeModal();
+      window.location.reload();
+    });
+
+    // Enviar solicitud de cambio
+    btnSubmit?.addEventListener('click', async () => {
+      const password = inputPassword.value.trim();
+      
+      // Validación previa
+      if (password.length < 12 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
+        pwdError.textContent = 'La contraseña debe tener mínimo 12 caracteres, mayúscula, minúscula, número y símbolo.';
+        pwdError.style.display = 'block';
+        return;
+      }
+
+      pendingPasswordValue = password;
+      formSection.style.display = 'none';
+      statusBox.className = 'status-area loading';
+      statusBox.style.display = 'block';
+      statusBox.innerHTML = 'Enviando solicitud al conmutador...';
+
+      try {
+        const res = await fetch('/api/cuenta/extensiones/password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            extension: targetExtension,
+            password: pendingPasswordValue
+          })
+        });
+
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          statusBox.className = 'status-area error';
+          statusBox.innerHTML = `
+            <div><strong>Error:</strong> ${data.error || 'No se pudo procesar la solicitud'}</div>
+            <div style="margin-top: 10px;">
+              <button id="btnRetryError" class="btn-secondary" style="font-size: 12px; padding: 4px 10px;">Volver a intentar</button>
+            </div>
+          `;
+          document.getElementById('btnRetryError')?.addEventListener('click', () => {
+            statusBox.style.display = 'none';
+            formSection.style.display = 'block';
+          });
+          return;
+        }
+
+        const ordenId = data.orden_id;
+        const passwordRevelar = data.password || pendingPasswordValue;
+
+        statusBox.innerHTML = `Sigue en proceso (Orden: <code>${ordenId}</code>)...`;
+
+        // Sondeo del estado de la orden
+        let intentos = 0;
+        const maxIntentos = 20;
+
+        const interval = setInterval(async () => {
+          intentos++;
+          try {
+            const checkRes = await fetch(`/api/cuenta/orden-status?orden_id=${ordenId}`);
+            const checkData = await checkRes.json().catch(() => ({}));
+
+            // 1. Completado
+            if (checkData.estado === 'completado') {
+              clearInterval(interval);
+              statusBox.style.display = 'none';
+              displayPassword.textContent = passwordRevelar;
+              successCard.style.display = 'block';
+              return;
+            }
+
+            // 2. Fallido o Compensado
+            if (checkData.estado === 'fallido' || checkData.estado === 'compensado' || checkData.terminal) {
+              clearInterval(interval);
+              statusBox.className = 'status-area error';
+              const msg = 'No se pudo cambiar la contraseña. La anterior sigue funcionando.';
+              statusBox.innerHTML = `
+                <div><strong>${msg}</strong></div>
+                <div style="margin-top: 12px;">
+                  <button id="btnRetryAfterFail" class="btn-action" style="font-size: 12px; padding: 6px 12px;">Reintentar</button>
+                </div>
+              `;
+              document.getElementById('btnRetryAfterFail')?.addEventListener('click', () => {
+                statusBox.style.display = 'none';
+                formSection.style.display = 'block';
+              });
+              return;
+            }
+
+            // 3. Timeout de sondeo
+            if (intentos >= maxIntentos) {
+              clearInterval(interval);
+              statusBox.className = 'status-area loading';
+              statusBox.innerHTML = `
+                <strong>Sigue en proceso.</strong> La orden <code>${ordenId}</code> continúa ejecutándose en segundo plano. Puede recargar en unos momentos para verificar.
+                <div style="margin-top: 10px;">
+                  <button class="btn-secondary" style="font-size: 12px; padding: 4px 10px;" onclick="window.location.reload()">Recargar</button>
+                </div>
+              `;
+            }
+          } catch {
+            // Ignorar errores transitorios de sondeo
+          }
+        }, 1500);
+
+      } catch (err: any) {
+        statusBox.className = 'status-area error';
+        statusBox.textContent = 'Error de conexión al enviar la solicitud.';
+      }
+    });
+  </script>
+</body>
+</html>

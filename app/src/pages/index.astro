@@ -531,8 +531,15 @@ function formatPillStatus(tipo: 'ext' | 'trk', online: boolean, rawStatus?: stri
 
     <!-- BLOQUE 2: Extensiones del Cliente -->
     <section class="card">
-      <h2 class="card-title">2. Extensiones del Cliente</h2>
-      <p class="card-desc">Líneas telefónicas de usuario aprovisionadas en el Edge.</p>
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+        <div>
+          <h2 class="card-title">2. Extensiones del Cliente</h2>
+          <p class="card-desc">Líneas telefónicas de usuario aprovisionadas en el Edge.</p>
+        </div>
+        <a href="/cuenta/extensiones" style="font-size: 13px; font-weight: 600; text-decoration: none; padding: 6px 12px; background: var(--color-bone); border: 1px solid var(--color-smoke); border-radius: 6px; color: var(--color-ink); white-space: nowrap;">
+          Gestionar contraseñas →
+        </a>
+      </div>
       {extensionesData.length > 0 ? (
         <div class="table-wrapper">
           <table>
