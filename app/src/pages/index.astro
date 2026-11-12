@@ -471,7 +471,7 @@ const sinServiciosAprovisionados = sinServiciosActivos;
         </div>
         <div style="padding-top: 10px; border-top: 1px dashed #fcd34d; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
           <span>
-            Tu cuenta no tiene servicios activos.{saldoDisponible !== null && saldoDisponible > 0 ? ` Tu saldo de $${saldoDisponible.toFixed(2)} MXN se conserva y se restablece si reactivas la cuenta.` : ''}
+            Tu cuenta no tiene servicios activos.{saldoDisponible !== null && saldoDisponible > 0 ? (' Tu saldo de ' + saldoDisponible.toFixed(2) + ' MXN se conserva y se restablece si reactivas la cuenta.') : ''}
           </span>
           <button id="btnReactivar" style="background-color: #059669; color: #ffffff; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer;">
             Reactivar Cuenta
@@ -485,14 +485,18 @@ const sinServiciosAprovisionados = sinServiciosActivos;
     <section class="card">
       <h2 class="card-title">1. Saldo</h2>
       <p class="card-desc">Consultado en tiempo real desde la puerta para el cliente {cliente}.</p>
-      {saldoData ? (
+      {errorSaldo ? (
+        <div class="empty-state">
+          No fue posible leer el saldo del cliente {cliente} ({errorSaldo}).
+        </div>
+      ) : saldoData ? (
         tieneSaldoValido && saldoDisponible !== null ? (
           <div class="saldo-primary">
             <div class="saldo-label">Saldo</div>
-            <div class="saldo-value">${saldoDisponible.toFixed(2)} <span style="font-size: 18px; font-weight: 400; color: var(--color-ash);">{monedaSaldo}</span></div>
+            <div class="saldo-value">{saldoDisponible.toFixed(2)} <span style="font-size: 18px; font-weight: 400; color: var(--color-ash);">{monedaSaldo}</span></div>
             {saldoReservado > 0 && (
               <div style="font-size: 13px; color: var(--color-ash); margin-top: 6px;">
-                Tienes ${saldoReservado.toFixed(2)} retenidos por una compra en curso
+                Tienes {saldoReservado.toFixed(2)} retenidos por una compra en curso
               </div>
             )}
           </div>
@@ -503,9 +507,7 @@ const sinServiciosAprovisionados = sinServiciosActivos;
         )
       ) : (
         <div class="empty-state">
-          {sinServiciosAprovisionados
-            ? 'Sin saldo asignado — cuenta sin servicios aprovisionados.'
-            : `No fue posible leer el saldo del cliente ${cliente} (${errorSaldo}).`}
+          No fue posible leer el saldo del cliente {cliente} ({errorSaldo || 'Error de lectura'}).
         </div>
       )}
     </section>
@@ -543,7 +545,7 @@ const sinServiciosAprovisionados = sinServiciosActivos;
                     {(() => {
                       const st = formatearPildoraEstado('ext', ext.online, ext.lineStatus);
                       return (
-                        <span class={`pill ${st.clase}`}>
+                        <span class={'pill ' + st.clase}>
                           <span class="pill-dot"></span>
                           <span>{st.texto}</span>
                           {st.meta && <span class="pill-meta">· {st.meta}</span>}
@@ -590,7 +592,7 @@ const sinServiciosAprovisionados = sinServiciosActivos;
                     {(() => {
                       const st = formatearPildoraEstado('trk', trk.online, trk.lineStatus);
                       return (
-                        <span class={`pill ${st.clase}`}>
+                        <span class={'pill ' + st.clase}>
                           <span class="pill-dot"></span>
                           <span>{st.texto}</span>
                           {st.meta && <span class="pill-meta">· {st.meta}</span>}

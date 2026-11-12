@@ -394,7 +394,7 @@ try {
                     {(() => {
                       const st = formatearPildoraEstado('ext', ext.online, ext.lineStatus);
                       return (
-                        <span class={`pill ${st.clase}`}>
+                        <span class={'pill ' + st.clase}>
                           <span class="pill-dot"></span>
                           <span>{st.texto}</span>
                           {st.meta && <span class="pill-meta">· {st.meta}</span>}
@@ -417,7 +417,7 @@ try {
         </div>
       ) : (
         <div class="empty-state">
-          {motorError ? 'Estado no disponible.' : `El cliente ${cliente} no tiene extensiones asignadas actualmente.`}
+          {motorError ? 'Estado no disponible.' : ('El cliente ' + cliente + ' no tiene extensiones asignadas actualmente.')}
         </div>
       )}
     </main>
