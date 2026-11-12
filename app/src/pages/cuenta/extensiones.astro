@@ -498,20 +498,39 @@ try {
   </div>
 
   <script>
+    (() => {
     // Lógica client-side
-    const modal = document.getElementById('modalPassword') as HTMLElement;
-    const modalExtName = document.getElementById('modalExtName') as HTMLElement;
-    const formSection = document.getElementById('formSection') as HTMLElement;
-    const inputPassword = document.getElementById('inputNewPassword') as HTMLInputElement;
-    const btnGenerate = document.getElementById('btnGenerate') as HTMLButtonElement;
-    const inputConfirm = document.getElementById('inputConfirmText') as HTMLInputElement;
-    const btnSubmit = document.getElementById('btnSubmitChange') as HTMLButtonElement;
-    const btnCancel = document.getElementById('btnCancelModal') as HTMLButtonElement;
-    const pwdError = document.getElementById('pwdError') as HTMLElement;
-    const statusBox = document.getElementById('statusBox') as HTMLElement;
-    const successCard = document.getElementById('successCard') as HTMLElement;
-    const displayPassword = document.getElementById('displayPassword') as HTMLElement;
-    const btnCloseSuccess = document.getElementById('btnCloseSuccess') as HTMLButtonElement;
+    const modal = document.getElementById('modalPassword') as HTMLElement | null;
+    const modalExtName = document.getElementById('modalExtName') as HTMLElement | null;
+    const formSection = document.getElementById('formSection') as HTMLElement | null;
+    const inputPassword = document.getElementById('inputNewPassword') as HTMLInputElement | null;
+    const btnGenerate = document.getElementById('btnGenerate') as HTMLButtonElement | null;
+    const inputConfirm = document.getElementById('inputConfirmText') as HTMLInputElement | null;
+    const btnSubmit = document.getElementById('btnSubmitChange') as HTMLButtonElement | null;
+    const btnCancel = document.getElementById('btnCancelModal') as HTMLButtonElement | null;
+    const pwdError = document.getElementById('pwdError') as HTMLElement | null;
+    const statusBox = document.getElementById('statusBox') as HTMLElement | null;
+    const successCard = document.getElementById('successCard') as HTMLElement | null;
+    const displayPassword = document.getElementById('displayPassword') as HTMLElement | null;
+    const btnCloseSuccess = document.getElementById('btnCloseSuccess') as HTMLButtonElement | null;
+
+    if (
+      !modal || !modalExtName || !formSection || !inputPassword || !btnGenerate ||
+      !inputConfirm || !btnSubmit || !btnCancel || !pwdError || !statusBox ||
+      !successCard || !displayPassword || !btnCloseSuccess
+    ) {
+      console.error('[extensiones] elemento requerido ausente', {
+        modal, modalExtName, formSection, inputPassword, btnGenerate,
+        inputConfirm, btnSubmit, btnCancel, pwdError, statusBox,
+        successCard, displayPassword, btnCloseSuccess
+      });
+      if (statusBox) {
+        statusBox.className = 'status-area error';
+        statusBox.style.display = 'block';
+        statusBox.textContent = 'Falta un elemento de la página: recarga.';
+      }
+      return;
+    }
 
     let targetExtension = '';
     let pendingPasswordValue = '';
@@ -560,15 +579,15 @@ try {
       });
     });
 
-    btnGenerate?.addEventListener('click', () => {
+    btnGenerate.addEventListener('click', () => {
       const generated = generateSecurePassword();
       inputPassword.value = generated;
       pwdError.style.display = 'none';
       checkFormValidity();
     });
 
-    inputConfirm?.addEventListener('input', checkFormValidity);
-    inputPassword?.addEventListener('input', () => {
+    inputConfirm.addEventListener('input', checkFormValidity);
+    inputPassword.addEventListener('input', () => {
       pwdError.style.display = 'none';
       pwdError.textContent = '';
       checkFormValidity();
@@ -579,14 +598,14 @@ try {
       pendingPasswordValue = '';
     }
 
-    btnCancel?.addEventListener('click', closeModal);
-    btnCloseSuccess?.addEventListener('click', () => {
+    btnCancel.addEventListener('click', closeModal);
+    btnCloseSuccess.addEventListener('click', () => {
       closeModal();
       window.location.reload();
     });
 
     // Enviar solicitud de cambio
-    btnSubmit?.addEventListener('click', async () => {
+    btnSubmit.addEventListener('click', async () => {
       const password = inputPassword.value.trim();
       pwdError.style.display = 'none';
       pwdError.textContent = '';
@@ -658,7 +677,12 @@ try {
                   <button id="btnRetryAfterFail" class="btn-action" style="font-size: 12px; padding: 6px 12px;">Reintentar</button>
                 </div>
               `;
-              document.getElementById('btnRetryAfterFail')?.addEventListener('click', () => {
+              const btnRetryAfterFail = document.getElementById('btnRetryAfterFail');
+              if (!btnRetryAfterFail) {
+                console.error('[extensiones] botón btnRetryAfterFail ausente');
+                return;
+              }
+              btnRetryAfterFail.addEventListener('click', () => {
                 statusBox.style.display = 'none';
                 formSection.style.display = 'block';
               });
@@ -686,6 +710,7 @@ try {
         statusBox.textContent = 'Error de conexión al enviar la solicitud.';
       }
     });
+    })();
   </script>
 </body>
 </html>

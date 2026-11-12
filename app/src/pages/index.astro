@@ -750,10 +750,11 @@ const sinServiciosAprovisionados = sinServiciosActivos;
   </div>
 
   <script>
-    const btnReactivar = document.getElementById('btnReactivar') as HTMLButtonElement;
-    const reactivarStatus = document.getElementById('reactivarStatus') as HTMLDivElement;
+    const btnReactivar = document.getElementById('btnReactivar') as HTMLButtonElement | null;
+    const reactivarStatus = document.getElementById('reactivarStatus') as HTMLDivElement | null;
 
-    btnReactivar?.addEventListener('click', async () => {
+    if (btnReactivar) {
+      btnReactivar.addEventListener('click', async () => {
       btnReactivar.disabled = true;
       if (reactivarStatus) {
         reactivarStatus.style.display = 'block';
@@ -822,6 +823,7 @@ const sinServiciosAprovisionados = sinServiciosActivos;
         btnReactivar.disabled = false;
       }
     });
+    }
 
     document.querySelectorAll('.btn-confirmar-aviso').forEach((btn: any) => {
       btn.addEventListener('click', async () => {

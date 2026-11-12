@@ -451,22 +451,47 @@ try {
   </div>
 
   <script>
-    const confirmInput = document.getElementById('confirmInput') as HTMLInputElement;
-    const btnBaja = document.getElementById('btnBaja') as HTMLButtonElement;
-    const statusBox = document.getElementById('statusBox') as HTMLDivElement;
-    const mainFormCard = document.getElementById('mainFormCard') as HTMLDivElement;
-    const successCard = document.getElementById('successCard') as HTMLDivElement;
-    const resFecha = document.getElementById('resFecha') as HTMLSpanElement;
-    const resOrdenId = document.getElementById('resOrdenId') as HTMLElement;
+    (() => {
+      const confirmInput = document.getElementById('confirmInput') as HTMLInputElement | null;
+      const btnBaja = document.getElementById('btnBaja') as HTMLButtonElement | null;
+      const statusBox = document.getElementById('statusBox') as HTMLDivElement | null;
+      const mainFormCard = document.getElementById('mainFormCard') as HTMLDivElement | null;
+      const successCard = document.getElementById('successCard') as HTMLDivElement | null;
+      const resFecha = document.getElementById('resFecha') as HTMLSpanElement | null;
+      const resOrdenId = document.getElementById('resOrdenId') as HTMLElement | null;
 
-    const EXACT_PHRASE = 'BAJA CONFIRMADA';
+      if (!confirmInput || !btnBaja || !statusBox || !mainFormCard || !successCard || !resFecha || !resOrdenId) {
+        console.error('[baja] elemento requerido ausente', {
+          confirmInput,
+          btnBaja,
+          statusBox,
+          mainFormCard,
+          successCard,
+          resFecha,
+          resOrdenId
+        });
+        if (statusBox) {
+          statusBox.className = 'status-area error';
+          statusBox.style.display = 'block';
+          statusBox.textContent = 'Falta un elemento de la página: recarga.';
+        } else {
+          const fallback = document.createElement('div');
+          fallback.className = 'status-area error';
+          fallback.style.display = 'block';
+          fallback.textContent = 'Falta un elemento de la página: recarga.';
+          document.body.prepend(fallback);
+        }
+        return;
+      }
 
-    // El botón permanece deshabilitado hasta que el texto coincida exacto
-    confirmInput?.addEventListener('input', () => {
-      btnBaja.disabled = (confirmInput.value.trim() !== EXACT_PHRASE);
-    });
+      const EXACT_PHRASE = 'BAJA CONFIRMADA';
 
-    btnBaja?.addEventListener('click', async () => {
+      // El botón permanece deshabilitado hasta que el texto coincida exacto
+      confirmInput.addEventListener('input', () => {
+        btnBaja.disabled = (confirmInput.value.trim() !== EXACT_PHRASE);
+      });
+
+      btnBaja.addEventListener('click', async () => {
       if (confirmInput.value.trim() !== EXACT_PHRASE) return;
 
       btnBaja.disabled = true;
@@ -505,7 +530,12 @@ try {
             const checkData = await checkRes.json().catch(() => ({}));
 
             const setupRetry = () => {
-              document.getElementById('btnRetry')?.addEventListener('click', () => {
+              const btnRetry = document.getElementById('btnRetry');
+              if (!btnRetry) {
+                console.error('[baja] botón btnRetry ausente en statusBox');
+                return;
+              }
+              btnRetry.addEventListener('click', () => {
                 confirmInput.disabled = false;
                 confirmInput.value = '';
                 btnBaja.disabled = true;
@@ -600,6 +630,7 @@ try {
         confirmInput.disabled = false;
       }
     });
+    })();
   </script>
 </body>
 </html>

@@ -555,36 +555,58 @@ try {
   </div>
 
   <script>
-    const appContainer = document.getElementById('comprarDidApp') as HTMLElement;
-    const rawSaldo = appContainer?.dataset.saldoDisponible;
+    (() => {
+    const appContainer = document.getElementById('comprarDidApp') as HTMLElement | null;
+    const inputPrefijo = document.getElementById('inputPrefijo') as HTMLInputElement | null;
+    const inputRegion = document.getElementById('inputRegion') as HTMLInputElement | null;
+    const btnSearch = document.getElementById('btnSearch') as HTMLButtonElement | null;
+    const tbodyDids = document.getElementById('tbodyDids') as HTMLElement | null;
+    const boxInsuficienteGeneral = document.getElementById('boxInsuficienteGeneral') as HTMLElement | null;
+
+    const modal = document.getElementById('modalConfirm') as HTMLElement | null;
+    const formSectionModal = document.getElementById('formSectionModal') as HTMLElement | null;
+    const modalDidText = document.getElementById('modalDidText') as HTMLElement | null;
+    const modalRegionText = document.getElementById('modalRegionText') as HTMLElement | null;
+    const modalPrecioText = document.getElementById('modalPrecioText') as HTMLElement | null;
+    const modalSaldoActualText = document.getElementById('modalSaldoActualText') as HTMLElement | null;
+    const modalSaldoRestoText = document.getElementById('modalSaldoRestoText') as HTMLElement | null;
+    const modalAvisoPrecio = document.getElementById('modalAvisoPrecio') as HTMLElement | null;
+    const modalAvisoResto = document.getElementById('modalAvisoResto') as HTMLElement | null;
+    const selectDestino = document.getElementById('selectDestino') as HTMLSelectElement | null;
+    const inputConfirm = document.getElementById('inputConfirmText') as HTMLInputElement | null;
+    const btnSubmitPurchase = document.getElementById('btnSubmitPurchase') as HTMLButtonElement | null;
+    const btnCancelModal = document.getElementById('btnCancelModal') as HTMLButtonElement | null;
+    const modalStatusBox = document.getElementById('modalStatusBox') as HTMLElement | null;
+    const modalSuccessBox = document.getElementById('modalSuccessBox') as HTMLElement | null;
+    const successDid = document.getElementById('successDid') as HTMLElement | null;
+    const successOrderId = document.getElementById('successOrderId') as HTMLElement | null;
+
+    if (
+      !appContainer || !inputPrefijo || !inputRegion || !btnSearch || !tbodyDids || !boxInsuficienteGeneral ||
+      !modal || !formSectionModal || !modalDidText || !modalRegionText || !modalPrecioText ||
+      !modalSaldoActualText || !modalSaldoRestoText || !modalAvisoPrecio || !modalAvisoResto ||
+      !selectDestino || !inputConfirm || !btnSubmitPurchase || !btnCancelModal ||
+      !modalStatusBox || !modalSuccessBox || !successDid || !successOrderId
+    ) {
+      console.error('[comprar-did] elemento requerido ausente', {
+        appContainer, inputPrefijo, inputRegion, btnSearch, tbodyDids, boxInsuficienteGeneral,
+        modal, formSectionModal, modalDidText, modalRegionText, modalPrecioText,
+        modalSaldoActualText, modalSaldoRestoText, modalAvisoPrecio, modalAvisoResto,
+        selectDestino, inputConfirm, btnSubmitPurchase, btnCancelModal,
+        modalStatusBox, modalSuccessBox, successDid, successOrderId
+      });
+      if (boxInsuficienteGeneral) {
+        boxInsuficienteGeneral.style.display = 'block';
+        boxInsuficienteGeneral.textContent = 'Falta un elemento de la página: recarga.';
+      }
+      return;
+    }
+
+    const rawSaldo = appContainer.dataset.saldoDisponible;
     let saldoActual = (rawSaldo !== undefined && rawSaldo !== '' && rawSaldo !== 'null') ? parseFloat(rawSaldo) : NaN;
     let targetDid = '';
     let targetRegion = '';
     let targetPrecio = 0;
-
-    const inputPrefijo = document.getElementById('inputPrefijo') as HTMLInputElement;
-    const inputRegion = document.getElementById('inputRegion') as HTMLInputElement;
-    const btnSearch = document.getElementById('btnSearch') as HTMLButtonElement;
-    const tbodyDids = document.getElementById('tbodyDids') as HTMLElement;
-    const boxInsuficienteGeneral = document.getElementById('boxInsuficienteGeneral') as HTMLElement;
-
-    const modal = document.getElementById('modalConfirm') as HTMLElement;
-    const formSectionModal = document.getElementById('formSectionModal') as HTMLElement;
-    const modalDidText = document.getElementById('modalDidText') as HTMLElement;
-    const modalRegionText = document.getElementById('modalRegionText') as HTMLElement;
-    const modalPrecioText = document.getElementById('modalPrecioText') as HTMLElement;
-    const modalSaldoActualText = document.getElementById('modalSaldoActualText') as HTMLElement;
-    const modalSaldoRestoText = document.getElementById('modalSaldoRestoText') as HTMLElement;
-    const modalAvisoPrecio = document.getElementById('modalAvisoPrecio') as HTMLElement;
-    const modalAvisoResto = document.getElementById('modalAvisoResto') as HTMLElement;
-    const selectDestino = document.getElementById('selectDestino') as HTMLSelectElement;
-    const inputConfirm = document.getElementById('inputConfirmText') as HTMLInputElement;
-    const btnSubmitPurchase = document.getElementById('btnSubmitPurchase') as HTMLButtonElement;
-    const btnCancelModal = document.getElementById('btnCancelModal') as HTMLButtonElement;
-    const modalStatusBox = document.getElementById('modalStatusBox') as HTMLElement;
-    const modalSuccessBox = document.getElementById('modalSuccessBox') as HTMLElement;
-    const successDid = document.getElementById('successDid') as HTMLElement;
-    const successOrderId = document.getElementById('successOrderId') as HTMLElement;
 
     // Buscar DIDs disponibles
     async function searchDids() {
@@ -639,9 +661,9 @@ try {
       }
     }
 
-    btnSearch?.addEventListener('click', searchDids);
-    inputPrefijo?.addEventListener('keydown', (e) => { if (e.key === 'Enter') searchDids(); });
-    inputRegion?.addEventListener('keydown', (e) => { if (e.key === 'Enter') searchDids(); });
+    btnSearch.addEventListener('click', searchDids);
+    inputPrefijo.addEventListener('keydown', (e) => { if (e.key === 'Enter') searchDids(); });
+    inputRegion.addEventListener('keydown', (e) => { if (e.key === 'Enter') searchDids(); });
 
     // Manejo de Selección / Apertura directa del Modal (Sin reserva previa)
     function attachReserveHandlers() {
@@ -698,21 +720,21 @@ try {
 
     // Validación de formulario modal (Destino obligatorio + CONFIRMAR COMPRA)
     function validarFormularioModal() {
-      const destinoValido = Boolean(selectDestino?.value);
-      const textoValido = inputConfirm?.value.trim() === 'CONFIRMAR COMPRA';
+      const destinoValido = Boolean(selectDestino.value);
+      const textoValido = inputConfirm.value.trim() === 'CONFIRMAR COMPRA';
       btnSubmitPurchase.disabled = !(destinoValido && textoValido && !isNaN(saldoActual) && saldoActual >= targetPrecio);
     }
 
-    inputConfirm?.addEventListener('input', validarFormularioModal);
-    selectDestino?.addEventListener('change', validarFormularioModal);
+    inputConfirm.addEventListener('input', validarFormularioModal);
+    selectDestino.addEventListener('change', validarFormularioModal);
 
-    btnCancelModal?.addEventListener('click', () => {
+    btnCancelModal.addEventListener('click', () => {
       modal.style.display = 'none';
     });
 
     // Confirmar Compra en un solo acto
-    btnSubmitPurchase?.addEventListener('click', async () => {
-      const destinoRaw = selectDestino?.value || '';
+    btnSubmitPurchase.addEventListener('click', async () => {
+      const destinoRaw = selectDestino.value || '';
       const [rawTipo, ...restDest] = destinoRaw.split(':');
       const destino = restDest.join(':');
       const destinoTipo = rawTipo === 'troncal' ? 'troncal' : 'extension';
@@ -807,6 +829,7 @@ try {
         modalStatusBox.textContent = 'Error de conexión al confirmar la compra.';
       }
     });
+    })();
   </script>
 </body>
 </html>
