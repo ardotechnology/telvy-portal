@@ -1,0 +1,84 @@
+---
+const TELVY_GATE_URL = process.env.VOIP_GATE_URL || process.env.TELVY_GATE_URL || 'http://host.docker.internal:4100';
+
+let paquetes: any[] = [];
+let errorCarga: string | null = null;
+
+try {
+  const res = await fetch(`${TELVY_GATE_URL}/v1/publico/paquetes`);
+  const data = await res.json().catch(() => ({ ok: false }));
+  if (res.ok && data.ok && Array.isArray(data.paquetes)) {
+    paquetes = data.paquetes;
+  } else {
+    errorCarga = data.error || `Error HTTP ${res.status}`;
+  }
+} catch (err: any) {
+  errorCarga = err.message || 'No se pudo consultar el catálogo de paquetes';
+}
+
+const tieneSesion = Boolean(Astro.locals.portalCuenta?.cliente);
+---
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Paquetes Telvy</title>
+    <style>
+      body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 2rem; }
+      .wrap { max-width: 1080px; margin: 0 auto; }
+      .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.5rem; }
+      .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 1.5rem; display: flex; flex-direction: column; justify-content: space-between; }
+      .price { font-size: 2rem; font-weight: 700; color: #38bdf8; margin: 0.75rem 0; }
+      .period { font-size: 0.9rem; color: #94a3b8; font-weight: 400; }
+      ul { list-style: none; padding: 0; margin: 1rem 0 1.5rem; color: #cbd5e1; }
+      li { padding: 0.35rem 0; border-bottom: 1px solid #293548; }
+      .btn { display: inline-block; text-align: center; background: #0284c7; color: #fff; text-decoration: none; padding: 0.75rem 1rem; border-radius: 8px; font-weight: 600; }
+      .btn:hover { background: #0369a1; }
+      .err { background: #450a0a; border: 1px solid #991b1b; padding: 1rem; border-radius: 8px; color: #fecaca; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="header">
+        <div>
+          <h1 style="margin:0;">Paquetes de Telefonía</h1>
+          <p style="margin:0.25rem 0 0;color:#94a3b8;">Catálogo vigente consultado en tiempo real.</p>
+        </div>
+        <a href={tieneSesion ? '/' : '/login'} style="color:#38bdf8;text-decoration:none;">
+          {tieneSesion ? 'Volver a mi cuenta' : 'Iniciar sesión'}
+        </a>
+      </div>
+
+      {errorCarga && <div class="err">{errorCarga}</div>}
+
+      {!errorCarga && paquetes.length === 0 && (
+        <p style="color:#94a3b8;">No hay paquetes activos disponibles en este momento.</p>
+      )}
+
+      <div class="grid" data-catalogo-paquetes>
+        {paquetes.map((p: any) => (
+          <article class="card" data-paquete-slug={p.slug}>
+            <div>
+              <h2 style="margin:0 0 0.25rem;">{p.nombre}</h2>
+              {p.descripcion && <p style="margin:0;color:#94a3b8;font-size:0.9rem;">{p.descripcion}</p>}
+              <div class="price">
+                ${Number(p.precio).toFixed(2)} {p.moneda}
+                <span class="period">/ {p.periodicidad}</span>
+              </div>
+              <ul>
+                <li>{p.dids_incluidos} DID incluido</li>
+                <li>{p.extensiones_incluidas} {Number(p.extensiones_incluidas) === 1 ? 'extensión' : 'extensiones'}</li>
+                <li>{p.llamadas_simultaneas} llamadas simultáneas</li>
+                {Number(p.canales_carrier) > 0 && <li>{p.canales_carrier} canales carrier</li>}
+              </ul>
+            </div>
+            <a class="btn" href={tieneSesion ? `/cuenta/alta?paquete=${encodeURIComponent(p.slug)}` : '/login'}>
+              Contratar {p.nombre}
+            </a>
+          </article>
+        ))}
+      </div>
+    </div>
+  </body>
+</html>

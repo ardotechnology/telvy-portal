@@ -1,0 +1,173 @@
+---
+const cliente = Astro.locals.portalCuenta?.cliente;
+if (!cliente) {
+  return Astro.redirect('/cuenta-no-vinculada');
+}
+
+const TELVY_GATE_URL = process.env.VOIP_GATE_URL || process.env.TELVY_GATE_URL || 'http://host.docker.internal:4100';
+const CLIENT_API_INTERNAL_KEY = process.env.VOIP_GATE_INTERNAL_KEY || process.env.CLIENT_API_INTERNAL_KEY || '';
+const headers = {
+  'X-Internal-Key': CLIENT_API_INTERNAL_KEY,
+  'X-Authenticated-Client': cliente
+};
+
+const paqueteParam = Astro.url.searchParams.get('paquete') || '';
+
+let paquetes: any[] = [];
+let didsIniciales: any[] = [];
+let errorCarga: string | null = null;
+
+try {
+  const [resPaq, resDids] = await Promise.all([
+    fetch(`${TELVY_GATE_URL}/v1/publico/paquetes`).then(async r => ({ ok: r.ok, data: await r.json().catch(() => ({})) })),
+    fetch(`${TELVY_GATE_URL}/v1/cliente/dids/disponibles?pagina=1&limite=20`, { headers }).then(async r => ({ ok: r.ok, data: await r.json().catch(() => ({})) }))
+  ]);
+
+  if (resPaq.ok && resPaq.data?.ok) {
+    paquetes = resPaq.data.paquetes || [];
+  } else {
+    errorCarga = 'No se pudieron consultar los paquetes disponibles';
+  }
+  if (resDids.ok && resDids.data?.ok) {
+    didsIniciales = resDids.data.dids || [];
+  }
+} catch {
+  errorCarga = 'Error de conexión con el motor';
+}
+---
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Contratar Paquete - Telvy</title>
+    <style>
+      body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 2rem; }
+      .wrap { max-width: 820px; margin: 0 auto; }
+      .panel { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; }
+      label { display: block; font-size: 0.9rem; color: #cbd5e1; margin-bottom: 0.4rem; }
+      input, select { width: 100%; box-sizing: border-box; padding: 0.65rem; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: #f8fafc; margin-bottom: 1rem; }
+      .did-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.5rem; margin: 1rem 0; }
+      .did-item { padding: 0.6rem; border: 1px solid #334155; border-radius: 8px; background: #0f172a; cursor: pointer; text-align: left; color: #e2e8f0; }
+      .did-item.selected { border-color: #38bdf8; background: #0c4a6e; font-weight: 700; }
+      .btn { background: #0284c7; color: #fff; border: 0; padding: 0.8rem 1.25rem; border-radius: 8px; font-weight: 600; cursor: pointer; }
+      .err { background: #450a0a; border: 1px solid #991b1b; padding: 0.75rem 1rem; border-radius: 8px; color: #fecaca; margin-bottom: 1rem; display: none; }
+      .ok { background: #052e16; border: 1px solid #166534; padding: 0.75rem 1rem; border-radius: 8px; color: #bbf7d0; margin-bottom: 1rem; display: none; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.5rem;">
+        <h1 style="margin:0;">Contratar Paquete</h1>
+        <a href="/paquetes" style="color:#38bdf8;text-decoration:none;">Ver paquetes</a>
+      </div>
+
+      {errorCarga && <div class="err" style="display:block;">{errorCarga}</div>}
+
+      <div id="msg-error" class="err"></div>
+      <div id="msg-ok" class="ok"></div>
+
+      <form id="form-alta" class="panel">
+        <label for="paquete_id">1. Paquete</label>
+        <select id="paquete_id" name="paquete_id" required>
+          {paquetes.map((p: any) => (
+            <option value={p.id} selected={p.slug === paqueteParam || p.id === paqueteParam}>
+              {p.nombre} — ${Number(p.precio).toFixed(2)} {p.moneda}/{p.periodicidad} ({p.extensiones_incluidas} ext, {p.llamadas_simultaneas} llam.)
+            </option>
+          ))}
+        </select>
+
+        <label for="buscar-did">2. Elegir DID (del buscador de disponibles)</label>
+        <div style="display:flex;gap:0.5rem;">
+          <input id="buscar-did" type="text" placeholder="Buscar por lada o número (ej. 5255)..." style="margin-bottom:0;" />
+          <button type="button" id="btn-buscar-did" class="btn" style="padding:0.6rem 1rem;">Buscar</button>
+        </div>
+
+        <input type="hidden" id="did_elegido" name="did_elegido" value="" />
+        <p id="did-elegido-label" style="color:#94a3b8;font-size:0.9rem;margin:0.75rem 0 0;">Ningún DID seleccionado.</p>
+
+        <div id="did-grid" class="did-list">
+          {didsIniciales.map((d: any) => (
+            <button type="button" class="did-item" data-did={d.did}>
+              <div>{d.did}</div>
+              <small style="color:#94a3b8;">{d.region || 'MEX'}</small>
+            </button>
+          ))}
+        </div>
+
+        <label for="password_extension">3. Contraseña de extensión principal (opcional; si la defines, mínimo 12 caracteres)</label>
+        <input id="password_extension" name="password_extension" type="password" placeholder="Dejar vacío para generar automáticamente" />
+
+        <button type="submit" class="btn">Confirmar alta y aprovisionar</button>
+      </form>
+    </div>
+
+    <script is:inline>
+      const didInput = document.getElementById('did_elegido');
+      const didLabel = document.getElementById('did-elegido-label');
+      const didGrid = document.getElementById('did-grid');
+      const errBox = document.getElementById('msg-error');
+      const okBox = document.getElementById('msg-ok');
+
+      function bindDidButtons() {
+        didGrid.querySelectorAll('.did-item').forEach(btn => {
+          btn.addEventListener('click', () => {
+            didGrid.querySelectorAll('.did-item').forEach(b => b.classList.remove('selected'));
+            btn.classList.add('selected');
+            const val = btn.getAttribute('data-did') || '';
+            didInput.value = val;
+            didLabel.textContent = 'DID elegido: ' + val;
+          });
+        });
+      }
+      bindDidButtons();
+
+      document.getElementById('btn-buscar-did').addEventListener('click', async () => {
+        const prefijo = document.getElementById('buscar-did').value.trim();
+        const qs = new URLSearchParams({ pagina: '1', limite: '20' });
+        if (prefijo) qs.set('prefijo', prefijo);
+        const res = await fetch('/api/cuenta/dids/disponibles?' + qs.toString());
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && Array.isArray(data.dids)) {
+          didGrid.innerHTML = data.dids.map(d =>
+            `<button type="button" class="did-item" data-did="${d.did}"><div>${d.did}</div><small style="color:#94a3b8;">${d.region || 'MEX'}</small></button>`
+          ).join('');
+          bindDidButtons();
+        }
+      });
+
+      document.getElementById('form-alta').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        errBox.style.display = 'none';
+        okBox.style.display = 'none';
+
+        const paquete_id = document.getElementById('paquete_id').value;
+        const did_elegido = didInput.value;
+        const password_extension = document.getElementById('password_extension').value;
+
+        if (!did_elegido) {
+          errBox.textContent = 'Debes seleccionar un DID disponible.';
+          errBox.style.display = 'block';
+          return;
+        }
+
+        const res = await fetch('/api/cuenta/alta', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            paquete_id,
+            did_elegido,
+            ...(password_extension ? { password_extension } : {})
+          })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) {
+          errBox.textContent = data.error || 'No se pudo completar el alta';
+          errBox.style.display = 'block';
+          return;
+        }
+        okBox.textContent = 'Orden de alta encolada: ' + data.orden_id;
+        okBox.style.display = 'block';
+      });
+    </script>
+  </body>
+</html>

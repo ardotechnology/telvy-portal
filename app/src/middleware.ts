@@ -34,6 +34,8 @@ export const onRequest = defineMiddleware(async (context, next) => {
     pathname === '/login' ||
     pathname === '/recuperar' ||
     pathname === '/cuenta-no-vinculada' ||
+    pathname === '/paquetes' ||
+    pathname.startsWith('/api/publico/') ||
     pathname.startsWith('/_astro') ||
     pathname.startsWith('/api/auth') ||
     pathname === '/favicon.ico';
