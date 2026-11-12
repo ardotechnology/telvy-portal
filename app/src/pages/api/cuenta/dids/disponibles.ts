@@ -16,8 +16,8 @@ export const GET: APIRoute = async ({ request, locals, url }) => {
   const pagina = url.searchParams.get('pagina') || '1';
   const limite = url.searchParams.get('limite') || '20';
 
-  const TELVY_GATE_URL = process.env.TELVY_GATE_URL || 'http://host.docker.internal:4100';
-  const CLIENT_API_INTERNAL_KEY = process.env.CLIENT_API_INTERNAL_KEY || '';
+  const TELVY_GATE_URL = process.env.VOIP_GATE_URL || process.env.TELVY_GATE_URL || 'http://host.docker.internal:4100';
+  const CLIENT_API_INTERNAL_KEY = process.env.VOIP_GATE_INTERNAL_KEY || process.env.CLIENT_API_INTERNAL_KEY || '';
 
   const targetUrl = new URL(`${TELVY_GATE_URL}/v1/cliente/dids/disponibles`);
   if (prefijo) targetUrl.searchParams.set('prefijo', prefijo);
@@ -46,3 +46,4 @@ export const GET: APIRoute = async ({ request, locals, url }) => {
     );
   }
 };
+

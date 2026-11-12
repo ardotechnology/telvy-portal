@@ -7,13 +7,16 @@ if (!cliente) {
   return Astro.redirect('/cuenta-no-vinculada');
 }
 
-const TELVY_GATE_URL = process.env.TELVY_GATE_URL || 'http://host.docker.internal:4100';
-const CLIENT_API_INTERNAL_KEY = process.env.CLIENT_API_INTERNAL_KEY || '';
+const TELVY_GATE_URL = process.env.VOIP_GATE_URL || process.env.TELVY_GATE_URL || 'http://host.docker.internal:4100';
+const CLIENT_API_INTERNAL_KEY = process.env.VOIP_GATE_INTERNAL_KEY || process.env.CLIENT_API_INTERNAL_KEY || '';
 
 const headers = {
   'X-Internal-Key': CLIENT_API_INTERNAL_KEY,
   'X-Authenticated-Client': cliente
 };
+
+const prefijoParam = Astro.url.searchParams.get('prefijo') || '';
+const regionParam = Astro.url.searchParams.get('region') || '';
 
 let saldoDisponible = 0;
 let didsIniciales: any[] = [];
@@ -21,11 +24,15 @@ let totalDids = 0;
 let motorError: string | null = null;
 
 try {
+  const queryParams = new URLSearchParams({ pagina: '1', limite: '20' });
+  if (prefijoParam) queryParams.set('prefijo', prefijoParam);
+  if (regionParam) queryParams.set('region', regionParam);
+
   const [resSaldo, resDids] = await Promise.all([
     fetch(`${TELVY_GATE_URL}/v1/cliente/saldo`, { headers })
       .then(async r => ({ ok: r.ok, data: await r.json().catch(() => ({})) }))
       .catch(() => ({ ok: false, data: {} })),
-    fetch(`${TELVY_GATE_URL}/v1/cliente/dids/disponibles?pagina=1&limite=20`, { headers })
+    fetch(`${TELVY_GATE_URL}/v1/cliente/dids/disponibles?${queryParams.toString()}`, { headers })
       .then(async r => ({ ok: r.ok, data: await r.json().catch(() => ({})) }))
       .catch(() => ({ ok: false, data: {} }))
   ]);
@@ -53,6 +60,7 @@ try {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" href="data:," />
   <title>Comprar Número (DID) — Portal Telvy</title>
   <style>
     :root {
@@ -329,7 +337,7 @@ try {
   </style>
 </head>
 <body>
-  <div class="container">
+  <div class="container" id="comprarDidApp" data-saldo-disponible={saldoDisponible} data-cliente={cliente}>
     <div class="top-bar">
       <a href="/" class="top-link">← Volver al Panel</a>
       <span style="font-size: 13px; color: var(--color-ash);">Cliente: <strong>{cliente}</strong> ({userEmail})</span>
@@ -357,7 +365,7 @@ try {
             type="text"
             class="text-input"
             placeholder="Ej. 52, 52442, 5281..."
-            value=""
+            value={prefijoParam}
           />
         </div>
         <div class="form-group">
@@ -367,7 +375,7 @@ try {
             type="text"
             class="text-input"
             placeholder="Ej. QRO, NL, CDMX..."
-            value=""
+            value={regionParam}
           />
         </div>
         <button id="btnSearch" class="btn-action" style="height: 40px;">
@@ -500,7 +508,8 @@ try {
   </div>
 
   <script>
-    let saldoActual = {saldoDisponible};
+    const appContainer = document.getElementById('comprarDidApp') as HTMLElement;
+    let saldoActual = parseFloat(appContainer?.dataset.saldoDisponible || '0');
     let targetDid = '';
     let targetRegion = '';
     let targetPrecio = 0;
@@ -596,18 +605,7 @@ try {
 
           boxInsuficienteGeneral.style.display = 'none';
 
-          // 1. Verificación rápida de saldo antes de reservar
-          if (saldoActual < targetPrecio) {
-            const faltante = (targetPrecio - saldoActual).toFixed(2);
-            boxInsuficienteGeneral.style.display = 'block';
-            boxInsuficienteGeneral.innerHTML = `
-              <strong>Saldo insuficiente:</strong> Te faltan $${faltante} MXN para comprar este número (+${targetDid}). Tu saldo disponible actual es $${saldoActual.toFixed(2)} MXN.
-            `;
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-            return;
-          }
-
-          // 2. Llamar al endpoint de reserva
+          // Llamar al endpoint de reserva
           el.textContent = 'Reservando...';
           (el as HTMLButtonElement).disabled = true;
 
@@ -624,9 +622,10 @@ try {
 
             if (res.status === 402) {
               const faltante = Number(data.faltante ?? (targetPrecio - saldoActual)).toFixed(2);
+              const disponible = Number(data.saldo_disponible ?? saldoActual).toFixed(2);
               boxInsuficienteGeneral.style.display = 'block';
               boxInsuficienteGeneral.innerHTML = `
-                <strong>Saldo insuficiente:</strong> Te faltan $${faltante} MXN para comprar este número. Tu saldo es $${saldoActual.toFixed(2)} MXN.
+                <strong>Saldo insuficiente:</strong> Te faltan $${faltante} MXN para comprar este número (+${targetDid}). Tu saldo disponible actual es $${disponible} MXN.
               `;
               window.scrollTo({ top: 0, behavior: 'smooth' });
               return;
@@ -640,12 +639,13 @@ try {
 
             // 3. Abrir modal de confirmación con datos reales
             const precioOficial = Number(data.precio || targetPrecio);
-            const resto = (saldoActual - precioOficial).toFixed(2);
+            const saldoBaseActual = Number(data.saldo_disponible_previo ?? saldoActual);
+            const resto = (saldoBaseActual - precioOficial).toFixed(2);
 
             modalDidText.textContent = `+${targetDid}`;
             modalRegionText.textContent = targetRegion;
             modalPrecioText.textContent = `$${precioOficial.toFixed(2)} MXN`;
-            modalSaldoActualText.textContent = `$${saldoActual.toFixed(2)} MXN`;
+            modalSaldoActualText.textContent = `$${saldoBaseActual.toFixed(2)} MXN`;
             modalSaldoRestoText.textContent = `$${resto} MXN`;
             modalAvisoPrecio.textContent = `$${precioOficial.toFixed(2)} MXN`;
             modalAvisoResto.textContent = `$${resto} MXN`;
@@ -688,7 +688,10 @@ try {
         const res = await fetch('/api/cuenta/dids/confirmar', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ did: targetDid })
+          body: JSON.stringify({
+            did: targetDid,
+            confirmacion: inputConfirm.value.trim()
+          })
         });
 
         const data = await res.json().catch(() => ({}));
@@ -760,3 +763,4 @@ try {
   </script>
 </body>
 </html>
+

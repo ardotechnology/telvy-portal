@@ -43,8 +43,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
     );
   }
 
-  const TELVY_GATE_URL = process.env.TELVY_GATE_URL || 'http://host.docker.internal:4100';
-  const CLIENT_API_INTERNAL_KEY = process.env.CLIENT_API_INTERNAL_KEY || '';
+  const TELVY_GATE_URL = process.env.VOIP_GATE_URL || process.env.TELVY_GATE_URL || 'http://host.docker.internal:4100';
+  const CLIENT_API_INTERNAL_KEY = process.env.VOIP_GATE_INTERNAL_KEY || process.env.CLIENT_API_INTERNAL_KEY || '';
   const idempotencyKey = crypto.randomUUID();
 
   try {
@@ -71,3 +71,4 @@ export const POST: APIRoute = async ({ request, locals }) => {
     );
   }
 };
+
