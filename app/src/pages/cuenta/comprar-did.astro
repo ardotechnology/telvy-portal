@@ -1,0 +1,762 @@
+---
+// Verificación estricta de sesión: cliente proviene SOLO del servidor/sesión
+const cliente = Astro.locals.portalCuenta?.cliente;
+const userEmail = Astro.locals.user?.email || '';
+
+if (!cliente) {
+  return Astro.redirect('/cuenta-no-vinculada');
+}
+
+const TELVY_GATE_URL = process.env.TELVY_GATE_URL || 'http://host.docker.internal:4100';
+const CLIENT_API_INTERNAL_KEY = process.env.CLIENT_API_INTERNAL_KEY || '';
+
+const headers = {
+  'X-Internal-Key': CLIENT_API_INTERNAL_KEY,
+  'X-Authenticated-Client': cliente
+};
+
+let saldoDisponible = 0;
+let didsIniciales: any[] = [];
+let totalDids = 0;
+let motorError: string | null = null;
+
+try {
+  const [resSaldo, resDids] = await Promise.all([
+    fetch(`${TELVY_GATE_URL}/v1/cliente/saldo`, { headers })
+      .then(async r => ({ ok: r.ok, data: await r.json().catch(() => ({})) }))
+      .catch(() => ({ ok: false, data: {} })),
+    fetch(`${TELVY_GATE_URL}/v1/cliente/dids/disponibles?pagina=1&limite=20`, { headers })
+      .then(async r => ({ ok: r.ok, data: await r.json().catch(() => ({})) }))
+      .catch(() => ({ ok: false, data: {} }))
+  ]);
+
+  if (resSaldo.ok && resSaldo.data?.ok) {
+    const sData = resSaldo.data;
+    const base = Number(sData.saldo_control?.saldo_base ?? sData.saldo?.credit ?? 0);
+    const resv = Number(sData.saldo_control?.saldo_reservado ?? 0);
+    saldoDisponible = Number(sData.saldo_control?.saldo_disponible ?? (base - resv));
+  }
+
+  if (resDids.ok && resDids.data?.ok) {
+    didsIniciales = resDids.data.dids || [];
+    totalDids = resDids.data.total || 0;
+  } else {
+    motorError = 'No se pudieron consultar los números disponibles en este momento';
+  }
+} catch {
+  motorError = 'Error de conexión con el servicio de telefonía';
+}
+---
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Comprar Número (DID) — Portal Telvy</title>
+  <style>
+    :root {
+      --color-highlighter-yellow: #e4f222;
+      --color-ink: #0c0a08;
+      --color-obsidian: #1a1919;
+      --color-paper: #ffffff;
+      --color-bone: #f4f2f0;
+      --color-ash: #6d6c6b;
+      --color-hairline: #e5e7eb;
+      --color-smoke: #e0deda;
+      --color-danger: #dc2626;
+      --color-danger-bg: #fef2f2;
+      --color-danger-border: #fecaca;
+      --color-success: #16a34a;
+      --color-success-bg: #f0fdf4;
+      --color-success-border: #bbf7d0;
+      --radius-card: 14px;
+      --radius-sm: 6px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--color-bone);
+      color: var(--color-ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      line-height: 1.5;
+      padding: 24px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 860px;
+    }
+
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+    }
+
+    .top-link {
+      font-size: 14px;
+      color: var(--color-ash);
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .top-link:hover {
+      color: var(--color-ink);
+      text-decoration: underline;
+    }
+
+    .card {
+      background: var(--color-paper);
+      border-radius: var(--radius-card);
+      border: 1px solid var(--color-smoke);
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+    }
+
+    .balance-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
+      padding: 8px 14px;
+      border-radius: 999px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--color-obsidian);
+      margin-bottom: 18px;
+    }
+
+    .search-bar {
+      display: grid;
+      grid-template-columns: 1fr 1fr auto;
+      gap: 12px;
+      margin-bottom: 20px;
+      align-items: end;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .form-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--color-ash);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .text-input {
+      padding: 9px 12px;
+      border: 1px solid var(--color-smoke);
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      outline: none;
+      font-family: inherit;
+    }
+
+    .text-input:focus {
+      border-color: var(--color-ink);
+    }
+
+    .btn-action {
+      background: var(--color-obsidian);
+      color: var(--color-paper);
+      border: none;
+      padding: 9px 16px;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    .btn-action:hover:not(:disabled) {
+      opacity: 0.9;
+    }
+
+    .btn-action:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-secondary {
+      background: var(--color-bone);
+      color: var(--color-ink);
+      border: 1px solid var(--color-smoke);
+      padding: 8px 14px;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .table-wrapper {
+      overflow-x: auto;
+      margin-top: 12px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 14px;
+    }
+
+    th {
+      background-color: var(--color-bone);
+      color: var(--color-ash);
+      font-weight: 600;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--color-smoke);
+    }
+
+    td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--color-hairline);
+      vertical-align: middle;
+    }
+
+    .pill-price {
+      display: inline-block;
+      font-weight: 700;
+      color: #0369a1;
+      background: #e0f2fe;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+
+    .empty-state {
+      padding: 32px;
+      text-align: center;
+      color: var(--color-ash);
+      background-color: var(--color-bone);
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+    }
+
+    /* Modal de Confirmación */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(12, 10, 8, 0.6);
+      backdrop-filter: blur(2px);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+
+    .modal-card {
+      background: var(--color-paper);
+      border-radius: var(--radius-card);
+      width: 100%;
+      max-width: 520px;
+      padding: 24px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+    }
+
+    .breakdown-box {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: var(--radius-sm);
+      padding: 14px;
+      margin: 16px 0;
+      font-size: 14px;
+    }
+
+    .breakdown-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .breakdown-row:last-child {
+      margin-bottom: 0;
+      padding-top: 8px;
+      border-top: 1px dashed #cbd5e1;
+      font-weight: 700;
+    }
+
+    .status-area {
+      padding: 14px;
+      border-radius: var(--radius-sm);
+      font-size: 14px;
+      margin-top: 16px;
+      display: none;
+    }
+
+    .status-area.loading {
+      display: block;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      color: #1e40af;
+    }
+
+    .status-area.error {
+      display: block;
+      background: var(--color-danger-bg);
+      border: 1px solid var(--color-danger-border);
+      color: var(--color-danger);
+    }
+
+    .status-area.success {
+      display: block;
+      background: var(--color-success-bg);
+      border: 1px solid var(--color-success-border);
+      color: var(--color-success);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="top-bar">
+      <a href="/" class="top-link">← Volver al Panel</a>
+      <span style="font-size: 13px; color: var(--color-ash);">Cliente: <strong>{cliente}</strong> ({userEmail})</span>
+    </div>
+
+    <main class="card">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap;">
+        <div>
+          <h1 style="font-size: 24px; font-weight: 700; margin-bottom: 4px;">Comprar Número Directo (DID)</h1>
+          <p style="font-size: 14px; color: var(--color-ash); margin-bottom: 16px;">
+            Elige un número telefónico disponible. El cargo se descuenta automáticamente de tu saldo.
+          </p>
+        </div>
+        <div class="balance-badge">
+          Saldo Disponible: <strong id="lblSaldo">${saldoDisponible.toFixed(2)} MXN</strong>
+        </div>
+      </div>
+
+      <!-- Barra de Filtros -->
+      <div class="search-bar">
+        <div class="form-group">
+          <label class="form-label">Prefijo / Lada:</label>
+          <input
+            id="inputPrefijo"
+            type="text"
+            class="text-input"
+            placeholder="Ej. 52, 52442, 5281..."
+            value=""
+          />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Región / Ciudad:</label>
+          <input
+            id="inputRegion"
+            type="text"
+            class="text-input"
+            placeholder="Ej. QRO, NL, CDMX..."
+            value=""
+          />
+        </div>
+        <button id="btnSearch" class="btn-action" style="height: 40px;">
+          Buscar DIDs
+        </button>
+      </div>
+
+      <!-- Aviso de Saldo Insuficiente General -->
+      <div id="boxInsuficienteGeneral" style="display: none;" class="status-area error"></div>
+
+      <!-- Tabla de DIDs -->
+      <div class="table-wrapper">
+        <table id="tblDids">
+          <thead>
+            <tr>
+              <th>Número Telefónico (E.164)</th>
+              <th>Región</th>
+              <th>Precio de Asignación</th>
+              <th style="text-align: right;">Acción</th>
+            </tr>
+          </thead>
+          <tbody id="tbodyDids">
+            {didsIniciales.length > 0 ? (
+              didsIniciales.map((d: any) => (
+                <tr>
+                  <td><strong>+{d.did}</strong></td>
+                  <td>{d.region || 'Nacional'}</td>
+                  <td><span class="pill-price">${Number(d.precio).toFixed(2)} MXN</span></td>
+                  <td style="text-align: right;">
+                    <button
+                      class="btn-action btn-reserve"
+                      data-did={d.did}
+                      data-region={d.region}
+                      data-precio={d.precio}
+                    >
+                      Reservar
+                    </button>
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colspan="4">
+                  <div class="empty-state">
+                    {motorError || 'No hay números telefónicos disponibles en este momento.'}
+                  </div>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </main>
+
+    <!-- Modal de Reserva y Confirmación -->
+    <div id="modalConfirm" class="modal-overlay">
+      <div class="modal-card">
+        <h2 style="font-size: 18px; font-weight: 700; margin-bottom: 4px;">Confirmar Compra de Número</h2>
+        <p style="font-size: 13px; color: var(--color-ash); margin-bottom: 12px;">
+          Revisa el desglose antes de confirmar el aprovisionamiento.
+        </p>
+
+        <div id="formSectionModal">
+          <!-- Desglose de Cobro -->
+          <div class="breakdown-box">
+            <div class="breakdown-row">
+              <span>Número seleccionado:</span>
+              <strong id="modalDidText">+52...</strong>
+            </div>
+            <div class="breakdown-row">
+              <span>Región:</span>
+              <span id="modalRegionText">-</span>
+            </div>
+            <div class="breakdown-row">
+              <span>Costo del DID:</span>
+              <span id="modalPrecioText" style="color: #0369a1;">$0.00 MXN</span>
+            </div>
+            <div class="breakdown-row">
+              <span>Tu saldo disponible actual:</span>
+              <span id="modalSaldoActualText">$0.00 MXN</span>
+            </div>
+            <div class="breakdown-row">
+              <span>Saldo restante estimado:</span>
+              <span id="modalSaldoRestoText">$0.00 MXN</span>
+            </div>
+          </div>
+
+          <div class="status-area loading" style="display: block; margin-bottom: 16px; font-size: 13px;">
+            Se cobrarán <strong id="modalAvisoPrecio">$50.00</strong> de tu saldo. Tu saldo quedará en <strong id="modalAvisoResto">$0.00</strong>.
+            El número se aprovisiona en unos segundos y podrás usarlo al configurarlo en tu central o softphone.
+          </div>
+
+          <div class="form-group" style="margin-bottom: 16px;">
+            <label class="form-label" style="font-size: 13px; color: var(--color-ink);">
+              Para confirmar, escribe <code style="background: var(--color-bone); padding: 2px 6px; border-radius: 4px; font-weight: 700;">CONFIRMAR COMPRA</code>:
+            </label>
+            <input
+              id="inputConfirmText"
+              type="text"
+              class="text-input"
+              placeholder="CONFIRMAR COMPRA"
+              autocomplete="off"
+            />
+          </div>
+
+          <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+            <button id="btnCancelModal" type="button" class="btn-secondary">Cancelar</button>
+            <button id="btnSubmitPurchase" type="button" class="btn-action" disabled>Confirmar Compra</button>
+          </div>
+        </div>
+
+        <!-- Área de Estado y Resultados -->
+        <div id="modalStatusBox" class="status-area"></div>
+
+        <!-- Éxito -->
+        <div id="modalSuccessBox" class="status-area success">
+          <h3 style="font-size: 16px; margin-bottom: 4px;">¡Compra completada con éxito!</h3>
+          <p style="font-size: 13px; margin-bottom: 10px;">
+            Tu nuevo número <strong id="successDid">+52...</strong> ya está asignado a tu cuenta.
+          </p>
+          <div style="font-size: 12px; margin-bottom: 14px;">
+            Orden: <code id="successOrderId">-</code>
+          </div>
+          <div style="text-align: right;">
+            <a href="/" class="btn-action" style="display: inline-block; text-decoration: none;">Volver al Panel Principal →</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let saldoActual = {saldoDisponible};
+    let targetDid = '';
+    let targetRegion = '';
+    let targetPrecio = 0;
+
+    const inputPrefijo = document.getElementById('inputPrefijo') as HTMLInputElement;
+    const inputRegion = document.getElementById('inputRegion') as HTMLInputElement;
+    const btnSearch = document.getElementById('btnSearch') as HTMLButtonElement;
+    const tbodyDids = document.getElementById('tbodyDids') as HTMLElement;
+    const boxInsuficienteGeneral = document.getElementById('boxInsuficienteGeneral') as HTMLElement;
+
+    const modal = document.getElementById('modalConfirm') as HTMLElement;
+    const formSectionModal = document.getElementById('formSectionModal') as HTMLElement;
+    const modalDidText = document.getElementById('modalDidText') as HTMLElement;
+    const modalRegionText = document.getElementById('modalRegionText') as HTMLElement;
+    const modalPrecioText = document.getElementById('modalPrecioText') as HTMLElement;
+    const modalSaldoActualText = document.getElementById('modalSaldoActualText') as HTMLElement;
+    const modalSaldoRestoText = document.getElementById('modalSaldoRestoText') as HTMLElement;
+    const modalAvisoPrecio = document.getElementById('modalAvisoPrecio') as HTMLElement;
+    const modalAvisoResto = document.getElementById('modalAvisoResto') as HTMLElement;
+    const inputConfirm = document.getElementById('inputConfirmText') as HTMLInputElement;
+    const btnSubmitPurchase = document.getElementById('btnSubmitPurchase') as HTMLButtonElement;
+    const btnCancelModal = document.getElementById('btnCancelModal') as HTMLButtonElement;
+    const modalStatusBox = document.getElementById('modalStatusBox') as HTMLElement;
+    const modalSuccessBox = document.getElementById('modalSuccessBox') as HTMLElement;
+    const successDid = document.getElementById('successDid') as HTMLElement;
+    const successOrderId = document.getElementById('successOrderId') as HTMLElement;
+
+    // Buscar DIDs disponibles
+    async function searchDids() {
+      const prefijo = inputPrefijo.value.trim();
+      const region = inputRegion.value.trim();
+
+      tbodyDids.innerHTML = `<tr><td colspan="4" style="text-align: center; padding: 20px;">Buscando números disponibles...</td></tr>`;
+      boxInsuficienteGeneral.style.display = 'none';
+
+      try {
+        const query = new URLSearchParams({ pagina: '1', limite: '20' });
+        if (prefijo) query.set('prefijo', prefijo);
+        if (region) query.set('region', region);
+
+        const res = await fetch(`/api/cuenta/dids/disponibles?${query.toString()}`);
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok || !data.ok || !Array.isArray(data.dids) || data.dids.length === 0) {
+          tbodyDids.innerHTML = `
+            <tr>
+              <td colspan="4">
+                <div class="empty-state">No se encontraron números disponibles con los filtros indicados.</div>
+              </td>
+            </tr>
+          `;
+          return;
+        }
+
+        tbodyDids.innerHTML = data.dids.map((d: any) => `
+          <tr>
+            <td><strong>+${d.did}</strong></td>
+            <td>${d.region || 'Nacional'}</td>
+            <td><span class="pill-price">$${Number(d.precio).toFixed(2)} MXN</span></td>
+            <td style="text-align: right;">
+              <button
+                class="btn-action btn-reserve"
+                data-did="${d.did}"
+                data-region="${d.region || 'Nacional'}"
+                data-precio="${d.precio}"
+              >
+                Reservar
+              </button>
+            </td>
+          </tr>
+        `).join('');
+
+        attachReserveHandlers();
+      } catch {
+        tbodyDids.innerHTML = `
+          <tr><td colspan="4"><div class="empty-state">Error de conexión al buscar números disponibles.</div></td></tr>
+        `;
+      }
+    }
+
+    btnSearch?.addEventListener('click', searchDids);
+    inputPrefijo?.addEventListener('keydown', (e) => { if (e.key === 'Enter') searchDids(); });
+    inputRegion?.addEventListener('keydown', (e) => { if (e.key === 'Enter') searchDids(); });
+
+    // Manejo de Reserva
+    function attachReserveHandlers() {
+      document.querySelectorAll('.btn-reserve').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          const el = e.currentTarget as HTMLElement;
+          targetDid = el.dataset.did || '';
+          targetRegion = el.dataset.region || 'Nacional';
+          targetPrecio = parseFloat(el.dataset.precio || '50');
+
+          boxInsuficienteGeneral.style.display = 'none';
+
+          // 1. Verificación rápida de saldo antes de reservar
+          if (saldoActual < targetPrecio) {
+            const faltante = (targetPrecio - saldoActual).toFixed(2);
+            boxInsuficienteGeneral.style.display = 'block';
+            boxInsuficienteGeneral.innerHTML = `
+              <strong>Saldo insuficiente:</strong> Te faltan $${faltante} MXN para comprar este número (+${targetDid}). Tu saldo disponible actual es $${saldoActual.toFixed(2)} MXN.
+            `;
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            return;
+          }
+
+          // 2. Llamar al endpoint de reserva
+          el.textContent = 'Reservando...';
+          (el as HTMLButtonElement).disabled = true;
+
+          try {
+            const res = await fetch('/api/cuenta/dids/reservar', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ did: targetDid })
+            });
+
+            const data = await res.json().catch(() => ({}));
+            el.textContent = 'Reservar';
+            (el as HTMLButtonElement).disabled = false;
+
+            if (res.status === 402) {
+              const faltante = Number(data.faltante ?? (targetPrecio - saldoActual)).toFixed(2);
+              boxInsuficienteGeneral.style.display = 'block';
+              boxInsuficienteGeneral.innerHTML = `
+                <strong>Saldo insuficiente:</strong> Te faltan $${faltante} MXN para comprar este número. Tu saldo es $${saldoActual.toFixed(2)} MXN.
+              `;
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+              return;
+            }
+
+            if (!res.ok) {
+              alert(data.error || 'No se pudo reservar el número. Es posible que otro cliente lo haya tomado.');
+              searchDids();
+              return;
+            }
+
+            // 3. Abrir modal de confirmación con datos reales
+            const precioOficial = Number(data.precio || targetPrecio);
+            const resto = (saldoActual - precioOficial).toFixed(2);
+
+            modalDidText.textContent = `+${targetDid}`;
+            modalRegionText.textContent = targetRegion;
+            modalPrecioText.textContent = `$${precioOficial.toFixed(2)} MXN`;
+            modalSaldoActualText.textContent = `$${saldoActual.toFixed(2)} MXN`;
+            modalSaldoRestoText.textContent = `$${resto} MXN`;
+            modalAvisoPrecio.textContent = `$${precioOficial.toFixed(2)} MXN`;
+            modalAvisoResto.textContent = `$${resto} MXN`;
+
+            inputConfirm.value = '';
+            btnSubmitPurchase.disabled = true;
+            modalStatusBox.style.display = 'none';
+            modalSuccessBox.style.display = 'none';
+            formSectionModal.style.display = 'block';
+            modal.style.display = 'flex';
+
+          } catch (err) {
+            el.textContent = 'Reservar';
+            (el as HTMLButtonElement).disabled = false;
+            alert('Error al comunicar con el conmutador para la reserva.');
+          }
+        });
+      });
+    }
+
+    attachReserveHandlers();
+
+    // Validación de texto de confirmación
+    inputConfirm?.addEventListener('input', () => {
+      btnSubmitPurchase.disabled = inputConfirm.value.trim() !== 'CONFIRMAR COMPRA';
+    });
+
+    btnCancelModal?.addEventListener('click', () => {
+      modal.style.display = 'none';
+    });
+
+    // Confirmar Compra
+    btnSubmitPurchase?.addEventListener('click', async () => {
+      formSectionModal.style.display = 'none';
+      modalStatusBox.className = 'status-area loading';
+      modalStatusBox.style.display = 'block';
+      modalStatusBox.textContent = 'Confirmando cobro y aprovisionando DID en conmutador...';
+
+      try {
+        const res = await fetch('/api/cuenta/dids/confirmar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ did: targetDid })
+        });
+
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          modalStatusBox.className = 'status-area error';
+          modalStatusBox.innerHTML = `
+            <div><strong>Error al confirmar:</strong> ${data.error || 'No se pudo completar la compra.'}</div>
+            <div style="margin-top: 10px;">
+              <button class="btn-secondary" onclick="window.location.reload()">Aceptar</button>
+            </div>
+          `;
+          return;
+        }
+
+        const ordenId = data.orden_id;
+        modalStatusBox.innerHTML = `Aprovisionando número en conmutador (Orden: <code>${ordenId}</code>)...`;
+
+        // Sondeo del estado de aprovisionamiento
+        let intentos = 0;
+        const maxIntentos = 20;
+
+        const interval = setInterval(async () => {
+          intentos++;
+          try {
+            const checkRes = await fetch(`/api/cuenta/orden-status?orden_id=${ordenId}`);
+            const checkData = await checkRes.json().catch(() => ({}));
+
+            if (checkData.estado === 'completado') {
+              clearInterval(interval);
+              modalStatusBox.style.display = 'none';
+              successDid.textContent = `+${targetDid}`;
+              successOrderId.textContent = ordenId;
+              modalSuccessBox.style.display = 'block';
+              return;
+            }
+
+            if (checkData.estado === 'fallido' || checkData.estado === 'compensado' || checkData.terminal) {
+              clearInterval(interval);
+              modalStatusBox.className = 'status-area error';
+              modalStatusBox.innerHTML = `
+                <div><strong>No se pudo completar el aprovisionamiento.</strong></div>
+                <div style="font-size: 13px; margin-top: 4px;">El importe cobrado quedó registrado para intervención de soporte.</div>
+                <div style="margin-top: 10px;">
+                  <button class="btn-secondary" onclick="window.location.reload()">Cerrar</button>
+                </div>
+              `;
+              return;
+            }
+
+            if (intentos >= maxIntentos) {
+              clearInterval(interval);
+              modalStatusBox.className = 'status-area loading';
+              modalStatusBox.innerHTML = `
+                <strong>Sigue en proceso.</strong> La orden <code>${ordenId}</code> continúa ejecutándose en segundo plano. El DID aparecerá en su panel en unos momentos.
+                <div style="margin-top: 10px;">
+                  <a href="/" class="btn-action" style="display: inline-block; text-decoration: none;">Ir al Panel</a>
+                </div>
+              `;
+            }
+          } catch {}
+        }, 1500);
+
+      } catch {
+        modalStatusBox.className = 'status-area error';
+        modalStatusBox.textContent = 'Error de conexión al confirmar la compra.';
+      }
+    });
+  </script>
+</body>
+</html>

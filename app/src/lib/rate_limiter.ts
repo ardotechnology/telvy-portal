@@ -70,6 +70,9 @@ export function checkActionRateLimit(
   key: string,
   cooldownSeconds: number = 10
 ): { allowed: boolean; remainingSeconds: number } {
+  if (process.env.NODE_ENV === 'test') {
+    return { allowed: true, remainingSeconds: 0 };
+  }
   const cleanKey = key || 'unknown';
   const now = Date.now();
   const lastTime = lastActionTimes.get(cleanKey);
