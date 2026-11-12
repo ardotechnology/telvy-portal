@@ -68,7 +68,8 @@ try {
   }
 
   if (resDids.ok && resDids.data?.ok) {
-    didsData = resDids.data.dids || [];
+    const rawDids = resDids.data.dids || [];
+    didsData = rawDids.filter((d: any) => d.estado_inventario === 'asignado' || d.estado_inventario === 'reservado' || d.retenido_por_baja);
   } else {
     errorDids = resDids.data?.error || `HTTP ${resDids.status}`;
   }
@@ -633,7 +634,9 @@ const sinServiciosAprovisionados = sinServiciosActivos;
               </tr>
             </thead>
             <tbody>
-              {didsData.map((d: any) => {
+              {didsData
+                .filter((d: any) => d.estado_inventario === 'asignado' || d.estado_inventario === 'reservado' || d.retenido_por_baja)
+                .map((d: any) => {
                 const esRetenidoPorBaja = Boolean(d.retenido_por_baja);
                 const tieneDestino = Boolean(d.tiene_destino || d.timbra_en);
                 const fechaVence = d.reserva_expira_at
