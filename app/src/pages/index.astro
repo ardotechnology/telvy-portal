@@ -635,7 +635,7 @@ const sinServiciosAprovisionados = sinServiciosActivos;
             </thead>
             <tbody>
               {didsData.map((d: any) => {
-                const esReservado = d.reservado || d.estado_inventario === 'reservado';
+                const esRetenidoPorBaja = Boolean(d.retenido_por_baja);
                 const tieneDestino = Boolean(d.tiene_destino || d.timbra_en);
                 const fechaVence = d.reserva_expira_at
                   ? new Date(d.reserva_expira_at).toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: 'numeric' })
@@ -645,10 +645,10 @@ const sinServiciosAprovisionados = sinServiciosActivos;
                     <td><code>{d.did}</code></td>
                     <td>{d.country || 'Nacional / Sin especificar'}</td>
                     <td>
-                      <code>{d.timbra_en || (esReservado ? 'Sin destino (en reserva)' : 'Sin destino')}</code>
+                      <code>{d.timbra_en || (esRetenidoPorBaja ? 'Sin destino (en reserva)' : 'Sin destino')}</code>
                     </td>
                     <td>
-                      {esReservado ? (
+                      {esRetenidoPorBaja ? (
                         <span class="pill pill-warn">
                           <span class="pill-dot"></span>
                           <span>Reservado para ti · vence el {fechaVence || '15 días'}</span>

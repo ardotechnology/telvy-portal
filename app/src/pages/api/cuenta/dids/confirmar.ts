@@ -43,6 +43,16 @@ export const POST: APIRoute = async ({ request, locals }) => {
     );
   }
 
+  const destinoTipo = String(body.destino_tipo || body.tipo_destino || '').trim().toLowerCase();
+  const destino = String(body.destino || body.extension || body.trunk || '').trim();
+
+  if (!destinoTipo || !destino) {
+    return new Response(
+      JSON.stringify({ ok: false, error: 'Debe seleccionar un destino para el número (extensión o troncal)' }),
+      { status: 400, headers: { 'Content-Type': 'application/json' } }
+    );
+  }
+
   const confirmacion = String(body.confirmacion || '').trim();
   if (confirmacion !== 'CONFIRMAR COMPRA') {
     return new Response(
@@ -64,7 +74,11 @@ export const POST: APIRoute = async ({ request, locals }) => {
         'X-Authenticated-Client': cliente,
         'Idempotency-Key': idempotencyKey
       },
-      body: JSON.stringify(body)
+      body: JSON.stringify({
+        ...body,
+        destino_tipo: destinoTipo,
+        destino
+      })
     });
 
     const data = await res.json().catch(() => ({}));
@@ -79,13 +93,13 @@ export const POST: APIRoute = async ({ request, locals }) => {
       if (rawLower.includes('conmutador') || rawLower.includes('descuento') || rawLower.includes('cobro')) {
         publicError = 'No se pudo cobrar el saldo. No se te ha hecho ningún cargo y tu saldo sigue intacto.';
       } else if (rawLower.includes('expirad') || res.status === 410) {
-        publicError = 'La reserva expiró. Vuelve a intentarlo.';
+        publicError = 'La operación expiró. Vuelve a intentarlo.';
       } else if (rawLower.includes('insuficiente') || res.status === 402) {
         publicError = 'Tu saldo no alcanza para esta compra.';
-      } else if (rawLower.includes('no disponible') || rawLower.includes('carrera') || res.status === 409) {
-        publicError = 'El número ya no está disponible.';
-      } else if (rawLower.includes('ajena') || rawLower.includes('prohibido') || res.status === 403) {
-        publicError = 'El número no está reservado para tu cuenta.';
+      } else if (rawLower.includes('no disponible') || rawLower.includes('ocupado') || rawLower.includes('carrera') || res.status === 409) {
+        publicError = 'El número ya no está disponible, por favor elige otro.';
+      } else if (rawLower.includes('destino') || rawLower.includes('ajen') || rawLower.includes('prohibido') || res.status === 403) {
+        publicError = 'El destino seleccionado no pertenece a tu cuenta.';
       } else if (data?.error && typeof data.error === 'string' && !data.error.includes(':') && data.error.length < 80) {
         publicError = data.error;
       }

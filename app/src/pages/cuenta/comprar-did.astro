@@ -22,6 +22,8 @@ let saldoDisponible: number | null = null;
 let tieneSaldoCuenta = false;
 let didsIniciales: any[] = [];
 let totalDids = 0;
+let extensionesCliente: any[] = [];
+let troncalesCliente: any[] = [];
 let motorError: string | null = null;
 
 try {
@@ -29,11 +31,17 @@ try {
   if (prefijoParam) queryParams.set('prefijo', prefijoParam);
   if (regionParam) queryParams.set('region', regionParam);
 
-  const [resSaldo, resDids] = await Promise.all([
+  const [resSaldo, resDids, resExts, resTrunks] = await Promise.all([
     fetch(`${TELVY_GATE_URL}/v1/cliente/saldo`, { headers })
       .then(async r => ({ ok: r.ok, data: await r.json().catch(() => ({})) }))
       .catch(() => ({ ok: false, data: {} })),
     fetch(`${TELVY_GATE_URL}/v1/cliente/dids/disponibles?${queryParams.toString()}`, { headers })
+      .then(async r => ({ ok: r.ok, data: await r.json().catch(() => ({})) }))
+      .catch(() => ({ ok: false, data: {} })),
+    fetch(`${TELVY_GATE_URL}/v1/cliente/extensiones`, { headers })
+      .then(async r => ({ ok: r.ok, data: await r.json().catch(() => ({})) }))
+      .catch(() => ({ ok: false, data: {} })),
+    fetch(`${TELVY_GATE_URL}/v1/cliente/troncales`, { headers })
       .then(async r => ({ ok: r.ok, data: await r.json().catch(() => ({})) }))
       .catch(() => ({ ok: false, data: {} }))
   ]);
@@ -63,6 +71,13 @@ try {
     totalDids = resDids.data.total || 0;
   } else {
     motorError = 'No se pudieron consultar los números disponibles en este momento';
+  }
+
+  if (resExts.ok && Array.isArray(resExts.data?.extensiones)) {
+    extensionesCliente = resExts.data.extensiones;
+  }
+  if (resTrunks.ok && Array.isArray(resTrunks.data?.troncales)) {
+    troncalesCliente = resTrunks.data.troncales;
   }
 } catch {
   motorError = 'Error de conexión con el servicio de telefonía';
@@ -425,7 +440,7 @@ try {
                       data-region={d.region}
                       data-precio={d.precio}
                     >
-                      Reservar
+                      Comprar
                     </button>
                   </td>
                 </tr>
@@ -449,7 +464,7 @@ try {
       <div class="modal-card">
         <h2 style="font-size: 18px; font-weight: 700; margin-bottom: 4px;">Confirmar Compra de Número</h2>
         <p style="font-size: 13px; color: var(--color-ash); margin-bottom: 12px;">
-          Revisa el desglose antes de confirmar el aprovisionamiento.
+          Revisa el desglose y selecciona el destino antes de confirmar la compra.
         </p>
 
         <div id="formSectionModal">
@@ -477,9 +492,33 @@ try {
             </div>
           </div>
 
+          <!-- Selector de Destino Obligatorio (Parte B) -->
+          <div class="form-group" style="margin-bottom: 16px;">
+            <label class="form-label" style="font-size: 13px; color: var(--color-ink);">
+              Dirigir llamadas a (Destino obligatorio):
+            </label>
+            <select id="selectDestino" class="text-input" style="width: 100%;">
+              <option value="">-- Selecciona una extensión o troncal --</option>
+              {extensionesCliente.length > 0 && (
+                <optgroup label="Extensiones">
+                  {extensionesCliente.map((ext: any) => (
+                    <option value={`extension:${ext.name || ext.numero}`}>{ext.name || ext.numero} (Extensión)</option>
+                  ))}
+                </optgroup>
+              )}
+              {troncalesCliente.length > 0 && (
+                <optgroup label="Troncales">
+                  {troncalesCliente.map((trk: any) => (
+                    <option value={`troncal:${trk.name}`}>{trk.name} (Troncal)</option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+          </div>
+
           <div class="status-area loading" style="display: block; margin-bottom: 16px; font-size: 13px;">
-            Se cobrarán <strong id="modalAvisoPrecio">$50.00</strong> de tu saldo. Tu saldo quedará en <strong id="modalAvisoResto">$0.00</strong>.
-            El número se aprovisiona en unos segundos y podrás usarlo al configurarlo en tu central o softphone.
+            Se cobrarán <strong id="modalAvisoPrecio">$50.00</strong> de tu saldo al confirmar. Tu saldo quedará en <strong id="modalAvisoResto">$0.00</strong>.
+            El número se aprovisiona en unos segundos y enrutará las llamadas al destino elegido.
           </div>
 
           <div class="form-group" style="margin-bottom: 16px;">
@@ -543,6 +582,7 @@ try {
     const modalSaldoRestoText = document.getElementById('modalSaldoRestoText') as HTMLElement;
     const modalAvisoPrecio = document.getElementById('modalAvisoPrecio') as HTMLElement;
     const modalAvisoResto = document.getElementById('modalAvisoResto') as HTMLElement;
+    const selectDestino = document.getElementById('selectDestino') as HTMLSelectElement;
     const inputConfirm = document.getElementById('inputConfirmText') as HTMLInputElement;
     const btnSubmitPurchase = document.getElementById('btnSubmitPurchase') as HTMLButtonElement;
     const btnCancelModal = document.getElementById('btnCancelModal') as HTMLButtonElement;
@@ -590,7 +630,7 @@ try {
                 data-region="${d.region || 'Nacional'}"
                 data-precio="${d.precio}"
               >
-                Reservar
+                Comprar
               </button>
             </td>
           </tr>
@@ -608,10 +648,10 @@ try {
     inputPrefijo?.addEventListener('keydown', (e) => { if (e.key === 'Enter') searchDids(); });
     inputRegion?.addEventListener('keydown', (e) => { if (e.key === 'Enter') searchDids(); });
 
-    // Manejo de Reserva
+    // Manejo de Selección / Apertura directa del Modal (Sin reserva previa)
     function attachReserveHandlers() {
       document.querySelectorAll('.btn-reserve').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
+        btn.addEventListener('click', (e) => {
           const el = e.currentTarget as HTMLElement;
           targetDid = el.dataset.did || '';
           targetRegion = el.dataset.region || 'Nacional';
@@ -619,84 +659,69 @@ try {
 
           boxInsuficienteGeneral.style.display = 'none';
 
-          // Llamar al endpoint de reserva
-          el.textContent = 'Reservando...';
-          (el as HTMLButtonElement).disabled = true;
-
-          try {
-            const res = await fetch('/api/cuenta/dids/reservar', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ did: targetDid })
-            });
-
-            const data = await res.json().catch(() => ({}));
-            el.textContent = 'Reservar';
-            (el as HTMLButtonElement).disabled = false;
-
-            if (res.status === 402) {
-              const faltante = Number(data.faltante ?? (targetPrecio - saldoActual)).toFixed(2);
-              const disponible = Number(data.saldo_disponible ?? saldoActual).toFixed(2);
-              boxInsuficienteGeneral.style.display = 'block';
-              boxInsuficienteGeneral.innerHTML = `
-                <strong>Saldo insuficiente:</strong> Te faltan $${faltante} MXN para comprar este número (+${targetDid}). Tu saldo disponible actual es $${disponible} MXN.
-              `;
-              window.scrollTo({ top: 0, behavior: 'smooth' });
-              return;
-            }
-
-            if (!res.ok) {
-              alert(data.error || 'No se pudo reservar el número. Es posible que otro cliente lo haya tomado.');
-              searchDids();
-              return;
-            }
-
-            // 3. Abrir modal de confirmación con datos reales
-            const precioOficial = Number(data.precio || targetPrecio);
-            const saldoBaseActual = Number(data.saldo_disponible_previo ?? saldoActual);
-            const resto = (saldoBaseActual - precioOficial).toFixed(2);
-
-            modalDidText.textContent = `+${targetDid}`;
-            modalRegionText.textContent = targetRegion;
-            modalPrecioText.textContent = `$${precioOficial.toFixed(2)} MXN`;
-            modalSaldoActualText.textContent = `$${saldoBaseActual.toFixed(2)} MXN`;
-            modalSaldoRestoText.textContent = `$${resto} MXN`;
-            modalAvisoPrecio.textContent = `$${precioOficial.toFixed(2)} MXN`;
-            modalAvisoResto.textContent = `$${resto} MXN`;
-
-            inputConfirm.value = '';
-            btnSubmitPurchase.disabled = true;
-            modalStatusBox.style.display = 'none';
-            modalSuccessBox.style.display = 'none';
-            formSectionModal.style.display = 'block';
-            modal.style.display = 'flex';
-
-          } catch (err) {
-            el.textContent = 'Reservar';
-            (el as HTMLButtonElement).disabled = false;
-            alert('Error al comunicar con el conmutador para la reserva.');
+          if (saldoActual < targetPrecio) {
+            const faltante = (targetPrecio - saldoActual).toFixed(2);
+            boxInsuficienteGeneral.style.display = 'block';
+            boxInsuficienteGeneral.innerHTML = `
+              <strong>Saldo insuficiente:</strong> Te faltan $${faltante} MXN para comprar este número (+${targetDid}). Tu saldo disponible actual es $${saldoActual.toFixed(2)} MXN.
+            `;
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            return;
           }
+
+          // Abrir modal directamente sin mutar backend
+          const resto = (saldoActual - targetPrecio).toFixed(2);
+          modalDidText.textContent = `+${targetDid}`;
+          modalRegionText.textContent = targetRegion;
+          modalPrecioText.textContent = `$${targetPrecio.toFixed(2)} MXN`;
+          modalSaldoActualText.textContent = `$${saldoActual.toFixed(2)} MXN`;
+          modalSaldoRestoText.textContent = `$${resto} MXN`;
+          modalAvisoPrecio.textContent = `$${targetPrecio.toFixed(2)} MXN`;
+          modalAvisoResto.textContent = `$${resto} MXN`;
+
+          if (selectDestino) selectDestino.value = '';
+          if (inputConfirm) inputConfirm.value = '';
+          btnSubmitPurchase.disabled = true;
+          modalStatusBox.style.display = 'none';
+          modalSuccessBox.style.display = 'none';
+          formSectionModal.style.display = 'block';
+          modal.style.display = 'flex';
         });
       });
     }
 
     attachReserveHandlers();
 
-    // Validación de texto de confirmación
-    inputConfirm?.addEventListener('input', () => {
-      btnSubmitPurchase.disabled = inputConfirm.value.trim() !== 'CONFIRMAR COMPRA';
-    });
+    // Validación de formulario modal (Destino obligatorio + CONFIRMAR COMPRA)
+    function validarFormularioModal() {
+      const destinoValido = Boolean(selectDestino?.value);
+      const textoValido = inputConfirm?.value.trim() === 'CONFIRMAR COMPRA';
+      btnSubmitPurchase.disabled = !(destinoValido && textoValido && saldoActual >= targetPrecio);
+    }
+
+    inputConfirm?.addEventListener('input', validarFormularioModal);
+    selectDestino?.addEventListener('change', validarFormularioModal);
 
     btnCancelModal?.addEventListener('click', () => {
       modal.style.display = 'none';
     });
 
-    // Confirmar Compra
+    // Confirmar Compra en un solo acto
     btnSubmitPurchase?.addEventListener('click', async () => {
+      const destinoRaw = selectDestino?.value || '';
+      const [rawTipo, ...restDest] = destinoRaw.split(':');
+      const destino = restDest.join(':');
+      const destinoTipo = rawTipo === 'troncal' ? 'troncal' : 'extension';
+
+      if (!destino) {
+        alert('Debes seleccionar un destino para las llamadas del número.');
+        return;
+      }
+
       formSectionModal.style.display = 'none';
       modalStatusBox.className = 'status-area loading';
       modalStatusBox.style.display = 'block';
-      modalStatusBox.textContent = 'Confirmando cobro y aprovisionando DID en conmutador...';
+      modalStatusBox.textContent = 'Ocupando número, confirmando cobro y aprovisionando...';
 
       try {
         const res = await fetch('/api/cuenta/dids/confirmar', {
@@ -704,6 +729,8 @@ try {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             did: targetDid,
+            destino_tipo: destinoTipo,
+            destino,
             confirmacion: inputConfirm.value.trim()
           })
         });
@@ -713,7 +740,7 @@ try {
         if (!res.ok) {
           modalStatusBox.className = 'status-area error';
           modalStatusBox.innerHTML = `
-            <div><strong>Error al confirmar:</strong> ${data.error || 'No se pudo completar la compra.'}</div>
+            <div><strong>Error al comprar:</strong> ${data.error || 'No se pudo completar la compra.'}</div>
             <div style="margin-top: 10px;">
               <button class="btn-secondary" onclick="window.location.reload()">Aceptar</button>
             </div>
