@@ -492,25 +492,7 @@ try {
             const checkRes = await fetch(`/api/cuenta/orden-status?orden_id=${ordenId}`);
             const checkData = await checkRes.json().catch(() => ({}));
 
-            if (checkData.estado === 'completado') {
-              clearInterval(interval);
-              mainFormCard.style.display = 'none';
-              successCard.style.display = 'block';
-              resFecha.textContent = new Date().toLocaleString('es-MX');
-              resOrdenId.textContent = ordenId;
-              return;
-            }
-
-            if (checkData.estado === 'fallido') {
-              clearInterval(interval);
-              statusBox.className = 'status-area error';
-              const errorMotivo = checkData.motivo || checkData.error || 'Error indeterminado en la saga de baja';
-              statusBox.innerHTML = `
-                <div><strong>La orden de baja ha fallado:</strong> ${errorMotivo}</div>
-                <div style="margin-top: 10px;">
-                  <button id="btnRetry" class="btn-baja" style="font-size: 12px; padding: 6px 12px;">Reintentar Baja</button>
-                </div>
-              `;
+            const setupRetry = () => {
               document.getElementById('btnRetry')?.addEventListener('click', () => {
                 confirmInput.disabled = false;
                 confirmInput.value = '';
@@ -518,15 +500,78 @@ try {
                 statusBox.className = 'status-area';
                 statusBox.style.display = 'none';
               });
+            };
+
+            // 1. Estado completado
+            if (checkData.estado === 'completado') {
+              clearInterval(interval);
+              mainFormCard.style.display = 'none';
+              successCard.style.display = 'block';
+              resFecha.textContent = new Date().toLocaleString('es-MX');
+              resOrdenId.textContent = ordenId;
+              const resDesc = successCard.querySelector('p');
+              if (resDesc && checkData.mensaje) {
+                resDesc.textContent = checkData.mensaje;
+              }
               return;
             }
 
+            // 2. Estado compensado (fracaso limpio sin afectación de servicios)
+            if (checkData.estado === 'compensado') {
+              clearInterval(interval);
+              statusBox.className = 'status-area error';
+              const msg = checkData.mensaje || 'No se pudo completar: no había servicios que retirar. Tu cuenta quedó como estaba.';
+              const expl = checkData.explicacion ? `<div style="margin-top: 4px; font-size: 13px;">${checkData.explicacion}</div>` : '';
+              statusBox.innerHTML = `
+                <div><strong>${msg}</strong></div>
+                ${expl}
+                <div style="margin-top: 12px;">
+                  <button id="btnRetry" class="btn-baja" style="font-size: 12px; padding: 6px 14px; background-color: var(--color-obsidian);">Reintentar Baja</button>
+                </div>
+              `;
+              setupRetry();
+              return;
+            }
+
+            // 3. Estado fallido
+            if (checkData.estado === 'fallido') {
+              clearInterval(interval);
+              statusBox.className = 'status-area error';
+              const msg = checkData.mensaje || 'No se pudo completar la operación. Nada cambió en tu cuenta.';
+              statusBox.innerHTML = `
+                <div><strong>${msg}</strong></div>
+                <div style="margin-top: 12px;">
+                  <button id="btnRetry" class="btn-baja" style="font-size: 12px; padding: 6px 14px; background-color: var(--color-obsidian);">Reintentar Baja</button>
+                </div>
+              `;
+              setupRetry();
+              return;
+            }
+
+            // 4. Detener sondeo inmediatamente si la orden es terminal
+            if (checkData.terminal) {
+              clearInterval(interval);
+              statusBox.className = 'status-area error';
+              statusBox.innerHTML = `
+                <div><strong>${checkData.mensaje || 'Operación finalizada.'}</strong></div>
+                ${checkData.puede_reintentar ? `
+                  <div style="margin-top: 12px;">
+                    <button id="btnRetry" class="btn-baja" style="font-size: 12px; padding: 6px 14px; background-color: var(--color-obsidian);">Reintentar</button>
+                  </div>
+                ` : ''}
+              `;
+              if (checkData.puede_reintentar) setupRetry();
+              return;
+            }
+
+            // 5. Agotamiento de intentos sin estado terminal (permanece pendiente o en proceso)
             if (intentos >= maxIntentos) {
               clearInterval(interval);
               statusBox.className = 'status-area loading';
               statusBox.innerHTML = `
-                <strong>Operación en proceso:</strong> La baja sigue procesándose en segundo plano (Orden: <code>${ordenId}</code>). Puede volver al portal en unos momentos.
-                <div style="margin-top: 12px;">
+                <strong>Sigue en proceso.</strong> Se esperó 30 segundos sin confirmación final del motor (Orden: <code>${ordenId}</code>). Puede recargar la página para verificar el estado de su cuenta.
+                <div style="margin-top: 12px; display: flex; gap: 12px; align-items: center;">
+                  <button class="btn-baja" style="font-size: 12px; padding: 6px 14px; background-color: var(--color-obsidian);" onclick="window.location.reload()">Recargar Página</button>
                   <a href="/" class="top-link" style="color: #1e40af; font-weight: 600;">Volver al Inicio →</a>
                 </div>
               `;

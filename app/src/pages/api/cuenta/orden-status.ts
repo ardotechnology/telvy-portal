@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { traducirEstadoOrden } from '../../../lib/orden_traductor';
 
 export const GET: APIRoute = async ({ request, locals }) => {
   const user = locals.user;
@@ -33,15 +34,45 @@ export const GET: APIRoute = async ({ request, locals }) => {
     });
 
     const data = await res.json().catch(() => ({}));
-    return new Response(JSON.stringify(data), {
-      status: res.status,
-      headers: { 'Content-Type': 'application/json' }
-    });
-  } catch (err: any) {
+
+    // Registro estricto en el servidor del portal del error crudo junto con el orden_id
+    if (data.ultimo_error || data.motivo) {
+      console.error(
+        `[portal:orden-status] Orden '${ordenId}' (estado: ${data.estado}): ${data.ultimo_error || data.motivo}`
+      );
+    }
+
+    if (!res.ok) {
+      return new Response(JSON.stringify(data), {
+        status: res.status,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Traducción canónica: el texto crudo del motor NUNCA se devuelve al cliente browser
+    const traduccion = traducirEstadoOrden(data.estado, ordenId, data.completado_at || data.fecha);
+
     return new Response(
-      JSON.stringify({ ok: false, error: err.message || 'Error de conexión con el conmutador' }),
+      JSON.stringify({
+        ok: true,
+        orden_id: ordenId,
+        estado: data.estado,
+        terminal: data.terminal !== undefined ? Boolean(data.terminal) : traduccion.terminal,
+        mensaje: traduccion.mensaje,
+        error_publico: data.error_publico || traduccion.error_publico,
+        puede_reintentar: traduccion.puede_reintentar,
+        explicacion: traduccion.explicacion ?? null
+      }),
+      {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      }
+    );
+  } catch (err: any) {
+    console.error(`[portal:orden-status] Fallo al conectar con conmutador para orden '${ordenId}':`, err.message);
+    return new Response(
+      JSON.stringify({ ok: false, error: 'Error de conexión con el conmutador', terminal: false, mensaje: 'Estado no disponible.' }),
       { status: 502, headers: { 'Content-Type': 'application/json' } }
     );
   }
 };
-
