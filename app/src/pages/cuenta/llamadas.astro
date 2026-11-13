@@ -134,6 +134,54 @@ const mesTitulo = `${mesNombre} de ${ahora.getUTCFullYear()}`;
       font-size: 13px;
       color: var(--color-ash);
     }
+    .btn-detalle {
+      padding: 4px 10px;
+      font-size: 12px;
+    }
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.55);
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 50;
+    }
+    .modal-card {
+      background: var(--color-white);
+      border-radius: 12px;
+      max-width: 680px;
+      width: 100%;
+      max-height: 88vh;
+      overflow-y: auto;
+      padding: 20px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+    }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+    .detail-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+      font-size: 13px;
+    }
+    .detail-item {
+      background: var(--color-paper);
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--color-smoke);
+    }
+    .detail-label {
+      font-size: 11px;
+      color: var(--color-ash);
+      margin-bottom: 2px;
+    }
   </style>
 </head>
 <body>
@@ -149,7 +197,10 @@ const mesTitulo = `${mesNombre} de ${ahora.getUTCFullYear()}`;
           <h1 id="headingMes">Llamadas de {mesTitulo}</h1>
           <p class="subtitle">Registro del mes en curso (del día 1 a hoy).</p>
         </div>
-        <button id="btnExportCsv" type="button" class="btn-primary">Exportar CSV</button>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button id="btnDesgloseTroncal" type="button" class="btn-secondary">Desglose de troncal</button>
+          <button id="btnExportCsv" type="button" class="btn-primary">Exportar CSV</button>
+        </div>
       </div>
       <div class="support-note">
         Para consultar meses anteriores, contacta a soporte.
@@ -157,6 +208,14 @@ const mesTitulo = `${mesNombre} de ${ahora.getUTCFullYear()}`;
     </div>
 
     <div id="cdrErrorBox" class="error-box"></div>
+
+    <div id="desgloseTroncalBox" class="card" style="display: none;">
+      <div class="header-row" style="margin-bottom: 10px;">
+        <h2 style="margin: 0; font-size: 16px;">Desglose de motivos de troncal (mes en curso)</h2>
+        <button id="btnCerrarDesglose" type="button" class="btn-secondary">Ocultar</button>
+      </div>
+      <div id="desgloseTroncalContenido" style="font-size: 13px; color: var(--color-ash);">Cargando...</div>
+    </div>
 
     <div class="summary-grid">
       <div class="summary-box">
@@ -198,6 +257,16 @@ const mesTitulo = `${mesNombre} de ${ahora.getUTCFullYear()}`;
     </div>
   </div>
 
+  <div id="cdrDetalleModal" class="modal-backdrop">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 style="margin: 0; font-size: 17px;">Detalle de llamada</h2>
+        <button id="btnCerrarDetalle" type="button" class="btn-secondary">Cerrar</button>
+      </div>
+      <div id="cdrDetalleBody" style="font-size: 13px;"></div>
+    </div>
+  </div>
+
   <script>
     (() => {
       const selectDireccion = document.getElementById('selectDireccion') as HTMLSelectElement | null;
@@ -211,22 +280,42 @@ const mesTitulo = `${mesNombre} de ${ahora.getUTCFullYear()}`;
       const btnNextPage = document.getElementById('btnNextPage') as HTMLButtonElement | null;
       const pageStatus = document.getElementById('pageStatus') as HTMLSpanElement | null;
       const pageInfo = document.getElementById('pageInfo') as HTMLSpanElement | null;
+      const btnDesgloseTroncal = document.getElementById('btnDesgloseTroncal') as HTMLButtonElement | null;
+      const desgloseTroncalBox = document.getElementById('desgloseTroncalBox') as HTMLDivElement | null;
+      const btnCerrarDesglose = document.getElementById('btnCerrarDesglose') as HTMLButtonElement | null;
+      const desgloseTroncalContenido = document.getElementById('desgloseTroncalContenido') as HTMLDivElement | null;
+      const cdrDetalleModal = document.getElementById('cdrDetalleModal') as HTMLDivElement | null;
+      const btnCerrarDetalle = document.getElementById('btnCerrarDetalle') as HTMLButtonElement | null;
+      const cdrDetalleBody = document.getElementById('cdrDetalleBody') as HTMLDivElement | null;
 
       if (
         !selectDireccion || !btnExportCsv || !cdrErrorBox || !cdrTableContainer ||
         !sumLlamadas || !sumMinutos || !sumCosto || !btnPrevPage || !btnNextPage ||
-        !pageStatus || !pageInfo
+        !pageStatus || !pageInfo || !btnDesgloseTroncal || !desgloseTroncalBox ||
+        !btnCerrarDesglose || !desgloseTroncalContenido || !cdrDetalleModal ||
+        !btnCerrarDetalle || !cdrDetalleBody
       ) {
         console.error('[llamadas] elemento requerido ausente', {
           selectDireccion, btnExportCsv, cdrErrorBox, cdrTableContainer,
           sumLlamadas, sumMinutos, sumCosto, btnPrevPage, btnNextPage,
-          pageStatus, pageInfo
+          pageStatus, pageInfo, btnDesgloseTroncal, desgloseTroncalBox,
+          btnCerrarDesglose, desgloseTroncalContenido, cdrDetalleModal,
+          btnCerrarDetalle, cdrDetalleBody
         });
         if (cdrErrorBox) {
           cdrErrorBox.style.display = 'block';
           cdrErrorBox.textContent = 'Falta un elemento de la página: recarga.';
         }
         return;
+      }
+
+      function escapeHtml(val: unknown): string {
+        return String(val ?? '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
       }
 
       let currentPage = 1;
@@ -291,13 +380,14 @@ const mesTitulo = `${mesNombre} de ${ahora.getUTCFullYear()}`;
 
           const rowsHtml = data.llamadas.map((l: any) => `
             <tr>
-              <td>${new Date(l.fecha).toLocaleString('es-MX')}</td>
-              <td>${l.origen}</td>
-              <td>${l.destino}</td>
-              <td>${l.direccion}</td>
+              <td>${escapeHtml(new Date(l.fecha).toLocaleString('es-MX'))}</td>
+              <td>${escapeHtml(l.origen)}</td>
+              <td>${escapeHtml(l.destino)}</td>
+              <td>${escapeHtml(l.direccion)}</td>
               <td>${Number(l.duracion_min).toFixed(2)}</td>
               <td>${Number(l.costo).toFixed(4)}</td>
-              <td>${l.moneda}</td>
+              <td>${escapeHtml(l.moneda)}</td>
+              <td><button type="button" class="btn-secondary btn-detalle" data-id="${escapeHtml(l.id_llamada)}">Ver</button></td>
             </tr>
           `).join('');
 
@@ -313,12 +403,20 @@ const mesTitulo = `${mesNombre} de ${ahora.getUTCFullYear()}`;
                     <th>Duración (min)</th>
                     <th>Costo</th>
                     <th>Moneda</th>
+                    <th>Detalle</th>
                   </tr>
                 </thead>
                 <tbody>${rowsHtml}</tbody>
               </table>
             </div>
           `;
+
+          cdrTableContainer.querySelectorAll('.btn-detalle').forEach((btn) => {
+            btn.addEventListener('click', () => {
+              const id = (btn as HTMLButtonElement).getAttribute('data-id');
+              if (id) abrirDetalleLlamada(id);
+            });
+          });
 
           const total = Number(data.total);
           const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -381,9 +479,114 @@ const mesTitulo = `${mesNombre} de ${ahora.getUTCFullYear()}`;
         }
       });
 
+      async function abrirDetalleLlamada(id: string) {
+        cdrDetalleModal.style.display = 'flex';
+        cdrDetalleBody.innerHTML = '<div class="empty-state">Cargando detalle de la llamada...</div>';
+        try {
+          const res = await fetch(`/api/cuenta/cdr/${encodeURIComponent(id)}/detalle`);
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data.ok || !data.detalle) {
+            cdrDetalleBody.innerHTML = `<div class="error-box" style="display:block;">${escapeHtml(data.error || 'No se pudo consultar el detalle de la llamada')}</div>`;
+            return;
+          }
+          const d = data.detalle;
+          const eventosHtml = Array.isArray(d.eventos_troncal) && d.eventos_troncal.length > 0
+            ? `
+              <table style="margin-top: 8px;">
+                <thead>
+                  <tr><th>Hora</th><th>Código</th><th>Motivo</th></tr>
+                </thead>
+                <tbody>
+                  ${d.eventos_troncal.map((ev: any) => `
+                    <tr>
+                      <td>${escapeHtml(ev.hora)}</td>
+                      <td>${escapeHtml(ev.codigo)}</td>
+                      <td>${escapeHtml(ev.motivo)}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            `
+            : `<p style="color: var(--color-ash); margin: 6px 0 0;">${escapeHtml(d.nota_eventos || 'sin eventos de troncal registrados')}</p>`;
+
+          cdrDetalleBody.innerHTML = `
+            <div class="detail-grid">
+              <div class="detail-item"><div class="detail-label">Fecha</div><div>${escapeHtml(new Date(d.fecha).toLocaleString('es-MX'))}</div></div>
+              <div class="detail-item"><div class="detail-label">Dirección</div><div>${escapeHtml(d.direccion)}</div></div>
+              <div class="detail-item"><div class="detail-label">Origen</div><div>${escapeHtml(d.origen)}</div></div>
+              <div class="detail-item"><div class="detail-label">Destino</div><div>${escapeHtml(d.destino)}</div></div>
+              <div class="detail-item"><div class="detail-label">Duración facturada</div><div>${Number(d.duracion_min).toFixed(2)} min</div></div>
+              <div class="detail-item"><div class="detail-label">Importe</div><div>${Number(d.costo).toFixed(4)} ${escapeHtml(d.moneda)}</div></div>
+              <div class="detail-item"><div class="detail-label">Disposición</div><div>${escapeHtml(d.disposicion)}</div></div>
+              <div class="detail-item"><div class="detail-label">Troncal</div><div>${escapeHtml(d.troncal || '-')}</div></div>
+              <div class="detail-item"><div class="detail-label">Prefijo</div><div>${escapeHtml(d.prefijo || '-')}</div></div>
+              <div class="detail-item"><div class="detail-label">Plan</div><div>${escapeHtml(d.plan || '-')}</div></div>
+              <div class="detail-item"><div class="detail-label">Servidor</div><div>${escapeHtml(d.servidor || '-')}</div></div>
+            </div>
+            <div class="detail-item" style="margin-bottom: 10px;">
+              <div class="detail-label">Capa 1 — Causa de terminación</div>
+              <div><strong>${escapeHtml(d.causa?.capa1?.etiqueta || 'sin causa registrada')}</strong> (código ${escapeHtml(d.causa?.capa1?.codigo ?? 0)})</div>
+            </div>
+            <div class="detail-item">
+              <div class="detail-label">Capa 2 — Eventos de troncal</div>
+              ${eventosHtml}
+            </div>
+          `;
+        } catch {
+          cdrDetalleBody.innerHTML = `<div class="error-box" style="display:block;">Error de conexión al cargar el detalle</div>`;
+        }
+      }
+
+      btnCerrarDetalle.addEventListener('click', () => {
+        cdrDetalleModal.style.display = 'none';
+      });
+
+      cdrDetalleModal.addEventListener('click', (ev) => {
+        if (ev.target === cdrDetalleModal) {
+          cdrDetalleModal.style.display = 'none';
+        }
+      });
+
+      btnCerrarDesglose.addEventListener('click', () => {
+        desgloseTroncalBox.style.display = 'none';
+      });
+
+      btnDesgloseTroncal.addEventListener('click', async () => {
+        desgloseTroncalBox.style.display = 'block';
+        desgloseTroncalContenido.innerHTML = 'Cargando desglose del mes...';
+        try {
+          const res = await fetch('/api/cuenta/cdr/troncal/desglose');
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data.ok) {
+            desgloseTroncalContenido.innerHTML = `<div class="error-box" style="display:block;">${escapeHtml(data.error || 'No se pudo cargar el desglose')}</div>`;
+            return;
+          }
+          const motivosRows = Array.isArray(data.motivos) && data.motivos.length > 0
+            ? data.motivos.map((m: any) => `
+              <tr>
+                <td>${escapeHtml(m.categoria)}</td>
+                <td>${escapeHtml(m.codigo)}</td>
+                <td>${escapeHtml(m.motivo)}</td>
+                <td><strong>${Number(m.total)}</strong></td>
+              </tr>
+            `).join('')
+            : '<tr><td colspan="4" style="color: var(--color-ash);">Sin llamadas registradas en el mes</td></tr>';
+          desgloseTroncalContenido.innerHTML = `
+            <p style="margin: 0 0 10px;">Total: <strong>${Number(data.total_llamadas)}</strong> · Contestadas: <strong>${Number(data.total_contestadas)}</strong> · Rechazadas: <strong>${Number(data.total_rechazadas)}</strong></p>
+            <table>
+              <thead><tr><th>Estado</th><th>Código</th><th>Motivo</th><th>Total</th></tr></thead>
+              <tbody>${motivosRows}</tbody>
+            </table>
+          `;
+        } catch {
+          desgloseTroncalContenido.innerHTML = `<div class="error-box" style="display:block;">Error de conexión al cargar el desglose</div>`;
+        }
+      });
+
       cargarResumen();
       cargarTabla();
     })();
   </script>
 </body>
 </html>
+
