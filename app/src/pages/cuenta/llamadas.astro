@@ -1,0 +1,389 @@
+---
+const user = Astro.locals.user;
+if (!user) {
+  return Astro.redirect('/login');
+}
+const cliente = Astro.locals.portalCuenta?.cliente;
+if (!cliente) {
+  return Astro.redirect('/cuenta-no-vinculada');
+}
+
+const ahora = new Date();
+const mesNombre = new Intl.DateTimeFormat('es-MX', { month: 'long', timeZone: 'UTC' }).format(ahora);
+const mesTitulo = `${mesNombre} de ${ahora.getUTCFullYear()}`;
+---
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Llamadas — Portal Telvy</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --color-white: #ffffff;
+      --color-bone: #fafaf9;
+      --color-smoke: #e7e5e4;
+      --color-ink: #1c1917;
+      --color-ash: #78716c;
+      --color-obsidian: #0f172a;
+      --color-danger: #dc2626;
+      --color-danger-bg: #fef2f2;
+      --color-danger-border: #fecaca;
+      --color-emerald: #059669;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--color-bone);
+      color: var(--color-ink);
+      line-height: 1.5;
+      padding: 24px 16px;
+    }
+    .container { max-width: 1024px; margin: 0 auto; }
+    .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+    .back-link { color: var(--color-ash); text-decoration: none; font-size: 14px; font-weight: 500; }
+    .back-link:hover { color: var(--color-ink); }
+    .card {
+      background: var(--color-white);
+      border: 1px solid var(--color-smoke);
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .header-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+    h1 { font-size: 22px; font-weight: 700; color: var(--color-obsidian); }
+    .subtitle { font-size: 13px; color: var(--color-ash); margin-top: 4px; }
+    .support-note {
+      margin-top: 10px;
+      font-size: 13px;
+      padding: 8px 12px;
+      background: var(--color-bone);
+      border: 1px solid var(--color-smoke);
+      border-radius: 6px;
+      color: var(--color-ink);
+    }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .summary-box {
+      background: var(--color-white);
+      border: 1px solid var(--color-smoke);
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+    .summary-label { font-size: 12px; color: var(--color-ash); font-weight: 600; }
+    .summary-value { font-size: 20px; font-weight: 700; color: var(--color-obsidian); margin-top: 4px; }
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+    select, button {
+      font-family: inherit;
+      font-size: 13px;
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--color-smoke);
+      background: var(--color-white);
+      color: var(--color-ink);
+    }
+    .btn-primary {
+      background: var(--color-obsidian);
+      color: var(--color-white);
+      border-color: var(--color-obsidian);
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-secondary { cursor: pointer; font-weight: 600; }
+    .btn-secondary:disabled { opacity: 0.4; cursor: not-allowed; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--color-smoke); }
+    th { font-size: 12px; color: var(--color-ash); font-weight: 600; }
+    .error-box {
+      display: none;
+      background: var(--color-danger-bg);
+      border: 1px solid var(--color-danger-border);
+      color: var(--color-danger);
+      padding: 12px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      margin-bottom: 14px;
+    }
+    .empty-state {
+      text-align: center;
+      padding: 28px 16px;
+      color: var(--color-ash);
+      font-size: 14px;
+    }
+    .pagination {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 14px;
+      font-size: 13px;
+      color: var(--color-ash);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="top-bar">
+      <a href="/" class="back-link">← Volver al Panel Principal</a>
+      <span style="font-size: 13px; color: var(--color-ash);">Cuenta: <strong>{cliente}</strong></span>
+    </div>
+
+    <div class="card">
+      <div class="header-row">
+        <div>
+          <h1 id="headingMes">Llamadas de {mesTitulo}</h1>
+          <p class="subtitle">Registro del mes en curso (del día 1 a hoy).</p>
+        </div>
+        <button id="btnExportCsv" type="button" class="btn-primary">Exportar CSV</button>
+      </div>
+      <div class="support-note">
+        Para consultar meses anteriores, contacta a soporte.
+      </div>
+    </div>
+
+    <div id="cdrErrorBox" class="error-box"></div>
+
+    <div class="summary-grid">
+      <div class="summary-box">
+        <div class="summary-label">Total de llamadas</div>
+        <div id="sumLlamadas" class="summary-value">-</div>
+      </div>
+      <div class="summary-box">
+        <div class="summary-label">Minutos facturados</div>
+        <div id="sumMinutos" class="summary-value">-</div>
+      </div>
+      <div class="summary-box">
+        <div class="summary-label">Costo total</div>
+        <div id="sumCosto" class="summary-value">-</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="toolbar">
+        <div>
+          <label for="selectDireccion" style="font-size: 13px; font-weight: 600; margin-right: 6px;">Dirección:</label>
+          <select id="selectDireccion">
+            <option value="">Todas</option>
+            <option value="saliente">Saliente</option>
+            <option value="entrante">Entrante</option>
+          </select>
+        </div>
+        <span id="pageInfo" style="font-size: 13px; color: var(--color-ash);"></span>
+      </div>
+
+      <div id="cdrTableContainer">
+        <div class="empty-state">Cargando llamadas del mes en curso...</div>
+      </div>
+
+      <div class="pagination">
+        <button id="btnPrevPage" type="button" class="btn-secondary" disabled>← Anterior</button>
+        <span id="pageStatus">Página 1</span>
+        <button id="btnNextPage" type="button" class="btn-secondary" disabled>Siguiente →</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      const selectDireccion = document.getElementById('selectDireccion') as HTMLSelectElement | null;
+      const btnExportCsv = document.getElementById('btnExportCsv') as HTMLButtonElement | null;
+      const cdrErrorBox = document.getElementById('cdrErrorBox') as HTMLDivElement | null;
+      const cdrTableContainer = document.getElementById('cdrTableContainer') as HTMLDivElement | null;
+      const sumLlamadas = document.getElementById('sumLlamadas') as HTMLDivElement | null;
+      const sumMinutos = document.getElementById('sumMinutos') as HTMLDivElement | null;
+      const sumCosto = document.getElementById('sumCosto') as HTMLDivElement | null;
+      const btnPrevPage = document.getElementById('btnPrevPage') as HTMLButtonElement | null;
+      const btnNextPage = document.getElementById('btnNextPage') as HTMLButtonElement | null;
+      const pageStatus = document.getElementById('pageStatus') as HTMLSpanElement | null;
+      const pageInfo = document.getElementById('pageInfo') as HTMLSpanElement | null;
+
+      if (
+        !selectDireccion || !btnExportCsv || !cdrErrorBox || !cdrTableContainer ||
+        !sumLlamadas || !sumMinutos || !sumCosto || !btnPrevPage || !btnNextPage ||
+        !pageStatus || !pageInfo
+      ) {
+        console.error('[llamadas] elemento requerido ausente', {
+          selectDireccion, btnExportCsv, cdrErrorBox, cdrTableContainer,
+          sumLlamadas, sumMinutos, sumCosto, btnPrevPage, btnNextPage,
+          pageStatus, pageInfo
+        });
+        if (cdrErrorBox) {
+          cdrErrorBox.style.display = 'block';
+          cdrErrorBox.textContent = 'Falta un elemento de la página: recarga.';
+        }
+        return;
+      }
+
+      let currentPage = 1;
+      const pageSize = 25;
+
+      function mostrarError(msg: string) {
+        cdrErrorBox.style.display = 'block';
+        cdrErrorBox.textContent = msg;
+      }
+
+      function limpiarError() {
+        cdrErrorBox.style.display = 'none';
+        cdrErrorBox.textContent = '';
+      }
+
+      async function cargarResumen() {
+        try {
+          const res = await fetch('/api/cuenta/cdr/resumen');
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data.ok || !data.resumen) {
+            sumLlamadas.textContent = 'No disponible';
+            sumMinutos.textContent = 'No disponible';
+            sumCosto.textContent = 'No disponible';
+            mostrarError(data.error || 'No se pudieron consultar tus llamadas');
+            return;
+          }
+          const r = data.resumen;
+          sumLlamadas.textContent = String(r.total_llamadas);
+          sumMinutos.textContent = Number(r.total_minutos).toFixed(2);
+          sumCosto.textContent = `${Number(r.total_costo).toFixed(2)} ${r.moneda}`;
+        } catch {
+          sumLlamadas.textContent = 'No disponible';
+          sumMinutos.textContent = 'No disponible';
+          sumCosto.textContent = 'No disponible';
+          mostrarError('No se pudieron consultar tus llamadas');
+        }
+      }
+
+      async function cargarTabla() {
+        limpiarError();
+        const dir = selectDireccion.value;
+        const qs = new URLSearchParams({ pagina: String(currentPage), limite: String(pageSize) });
+        if (dir) qs.set('direccion', dir);
+
+        try {
+          const res = await fetch(`/api/cuenta/cdr?${qs.toString()}`);
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data.ok || !Array.isArray(data.llamadas)) {
+            cdrTableContainer.innerHTML = '';
+            mostrarError('No se pudieron consultar tus llamadas');
+            return;
+          }
+
+          if (data.llamadas.length === 0) {
+            cdrTableContainer.innerHTML = `<div class="empty-state">No hay llamadas en este periodo</div>`;
+            pageStatus.textContent = `Página ${currentPage}`;
+            pageInfo.textContent = '0 llamadas';
+            btnPrevPage.disabled = currentPage <= 1;
+            btnNextPage.disabled = true;
+            return;
+          }
+
+          const rowsHtml = data.llamadas.map((l: any) => `
+            <tr>
+              <td>${new Date(l.fecha).toLocaleString('es-MX')}</td>
+              <td>${l.origen}</td>
+              <td>${l.destino}</td>
+              <td>${l.direccion}</td>
+              <td>${Number(l.duracion_min).toFixed(2)}</td>
+              <td>${Number(l.costo).toFixed(4)}</td>
+              <td>${l.moneda}</td>
+            </tr>
+          `).join('');
+
+          cdrTableContainer.innerHTML = `
+            <div style="overflow-x: auto;">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Fecha</th>
+                    <th>Origen</th>
+                    <th>Destino</th>
+                    <th>Dirección</th>
+                    <th>Duración (min)</th>
+                    <th>Costo</th>
+                    <th>Moneda</th>
+                  </tr>
+                </thead>
+                <tbody>${rowsHtml}</tbody>
+              </table>
+            </div>
+          `;
+
+          const total = Number(data.total);
+          const totalPages = Math.max(1, Math.ceil(total / pageSize));
+          pageStatus.textContent = `Página ${currentPage} de ${totalPages}`;
+          pageInfo.textContent = `${total} llamada(s)`;
+          btnPrevPage.disabled = currentPage <= 1;
+          btnNextPage.disabled = currentPage >= totalPages;
+        } catch {
+          cdrTableContainer.innerHTML = '';
+          mostrarError('No se pudieron consultar tus llamadas');
+        }
+      }
+
+      selectDireccion.addEventListener('change', () => {
+        currentPage = 1;
+        cargarTabla();
+      });
+
+      btnPrevPage.addEventListener('click', () => {
+        if (currentPage > 1) {
+          currentPage--;
+          cargarTabla();
+        }
+      });
+
+      btnNextPage.addEventListener('click', () => {
+        currentPage++;
+        cargarTabla();
+      });
+
+      btnExportCsv.addEventListener('click', async () => {
+        limpiarError();
+        btnExportCsv.disabled = true;
+        try {
+          const dir = selectDireccion.value;
+          const qs = new URLSearchParams();
+          if (dir) qs.set('direccion', dir);
+          const res = await fetch(`/api/cuenta/cdr/export.csv?${qs.toString()}`);
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            mostrarError(errData.error || 'No se pudo exportar el CSV de llamadas.');
+            return;
+          }
+          const blob = await res.blob();
+          const disp = res.headers.get('content-disposition') || '';
+          const match = disp.match(/filename="([^"]+)"/);
+          const filename = match ? match[1] : 'llamadas.csv';
+          const urlObj = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = urlObj;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(urlObj);
+        } catch {
+          mostrarError('No se pudo exportar el CSV por un error de conexión.');
+        } finally {
+          btnExportCsv.disabled = false;
+        }
+      });
+
+      cargarResumen();
+      cargarTabla();
+    })();
+  </script>
+</body>
+</html>
