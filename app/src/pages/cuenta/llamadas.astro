@@ -240,6 +240,7 @@ const mesTitulo = `${mesNombre} de ${ahora.getUTCFullYear()}`;
             <option value="">Todas</option>
             <option value="saliente">Saliente</option>
             <option value="entrante">Entrante</option>
+            <option value="desconocida">Desconocida</option>
           </select>
         </div>
         <span id="pageInfo" style="font-size: 13px; color: var(--color-ash);"></span>
@@ -384,6 +385,7 @@ const mesTitulo = `${mesNombre} de ${ahora.getUTCFullYear()}`;
               <td>${escapeHtml(l.origen)}</td>
               <td>${escapeHtml(l.destino)}</td>
               <td>${escapeHtml(l.direccion)}</td>
+              <td>${escapeHtml(l.disposicion === 'no_contestada' ? 'no contestada' : 'contestada')}</td>
               <td>${Number(l.duracion_min).toFixed(2)}</td>
               <td>${Number(l.costo).toFixed(4)}</td>
               <td>${escapeHtml(l.moneda)}</td>
@@ -400,6 +402,7 @@ const mesTitulo = `${mesNombre} de ${ahora.getUTCFullYear()}`;
                     <th>Origen</th>
                     <th>Destino</th>
                     <th>Dirección</th>
+                    <th>Disposición</th>
                     <th>Duración (min)</th>
                     <th>Costo</th>
                     <th>Moneda</th>
