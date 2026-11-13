@@ -182,6 +182,26 @@ const mesTitulo = `${mesNombre} de ${ahora.getUTCFullYear()}`;
       color: var(--color-ash);
       margin-bottom: 2px;
     }
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid var(--color-smoke);
+      border-top-color: var(--color-ink);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .slow-notice {
+      display: none;
+      margin-top: 8px;
+      font-size: 13px;
+      color: var(--color-ash);
+    }
   </style>
 </head>
 <body>
@@ -207,7 +227,12 @@ const mesTitulo = `${mesNombre} de ${ahora.getUTCFullYear()}`;
       </div>
     </div>
 
-    <div id="cdrErrorBox" class="error-box"></div>
+    <div id="cdrErrorBox" class="error-box">
+      <span id="cdrErrorText"></span>
+      <button id="btnReintentar" type="button" class="btn-secondary" style="display: none; margin-left: 10px;">Reintentar</button>
+    </div>
+
+    <div id="cdrSlowNotice" class="slow-notice">Esto está tardando más de lo normal.</div>
 
     <div id="desgloseTroncalBox" class="card" style="display: none;">
       <div class="header-row" style="margin-bottom: 10px;">
@@ -215,6 +240,10 @@ const mesTitulo = `${mesNombre} de ${ahora.getUTCFullYear()}`;
         <button id="btnCerrarDesglose" type="button" class="btn-secondary">Ocultar</button>
       </div>
       <div id="desgloseTroncalContenido" style="font-size: 13px; color: var(--color-ash);">Cargando...</div>
+    </div>
+
+    <div id="resumenLoading" style="font-size: 13px; color: var(--color-ash); margin-bottom: 10px;">
+      <span class="spinner"></span> Cargando llamadas…
     </div>
 
     <div class="summary-grid">
@@ -247,7 +276,7 @@ const mesTitulo = `${mesNombre} de ${ahora.getUTCFullYear()}`;
       </div>
 
       <div id="cdrTableContainer">
-        <div class="empty-state">Cargando llamadas del mes en curso...</div>
+        <div class="empty-state"><span class="spinner"></span> Cargando llamadas…</div>
       </div>
 
       <div class="pagination">
@@ -273,6 +302,10 @@ const mesTitulo = `${mesNombre} de ${ahora.getUTCFullYear()}`;
       const selectDireccion = document.getElementById('selectDireccion') as HTMLSelectElement | null;
       const btnExportCsv = document.getElementById('btnExportCsv') as HTMLButtonElement | null;
       const cdrErrorBox = document.getElementById('cdrErrorBox') as HTMLDivElement | null;
+      const cdrErrorText = document.getElementById('cdrErrorText') as HTMLSpanElement | null;
+      const btnReintentar = document.getElementById('btnReintentar') as HTMLButtonElement | null;
+      const cdrSlowNotice = document.getElementById('cdrSlowNotice') as HTMLDivElement | null;
+      const resumenLoading = document.getElementById('resumenLoading') as HTMLDivElement | null;
       const cdrTableContainer = document.getElementById('cdrTableContainer') as HTMLDivElement | null;
       const sumLlamadas = document.getElementById('sumLlamadas') as HTMLDivElement | null;
       const sumMinutos = document.getElementById('sumMinutos') as HTMLDivElement | null;
@@ -290,14 +323,16 @@ const mesTitulo = `${mesNombre} de ${ahora.getUTCFullYear()}`;
       const cdrDetalleBody = document.getElementById('cdrDetalleBody') as HTMLDivElement | null;
 
       if (
-        !selectDireccion || !btnExportCsv || !cdrErrorBox || !cdrTableContainer ||
+        !selectDireccion || !btnExportCsv || !cdrErrorBox || !cdrErrorText || !btnReintentar ||
+        !cdrSlowNotice || !resumenLoading || !cdrTableContainer ||
         !sumLlamadas || !sumMinutos || !sumCosto || !btnPrevPage || !btnNextPage ||
         !pageStatus || !pageInfo || !btnDesgloseTroncal || !desgloseTroncalBox ||
         !btnCerrarDesglose || !desgloseTroncalContenido || !cdrDetalleModal ||
         !btnCerrarDetalle || !cdrDetalleBody
       ) {
         console.error('[llamadas] elemento requerido ausente', {
-          selectDireccion, btnExportCsv, cdrErrorBox, cdrTableContainer,
+          selectDireccion, btnExportCsv, cdrErrorBox, cdrErrorText, btnReintentar,
+          cdrSlowNotice, resumenLoading, cdrTableContainer,
           sumLlamadas, sumMinutos, sumCosto, btnPrevPage, btnNextPage,
           pageStatus, pageInfo, btnDesgloseTroncal, desgloseTroncalBox,
           btnCerrarDesglose, desgloseTroncalContenido, cdrDetalleModal,
@@ -321,52 +356,78 @@ const mesTitulo = `${mesNombre} de ${ahora.getUTCFullYear()}`;
 
       let currentPage = 1;
       const pageSize = 25;
+      let activeController: AbortController | null = null;
 
-      function mostrarError(msg: string) {
+      function mostrarError(msg: string, conReintento = true) {
         cdrErrorBox.style.display = 'block';
-        cdrErrorBox.textContent = msg;
+        cdrErrorText.textContent = msg;
+        btnReintentar.style.display = conReintento ? 'inline-block' : 'none';
       }
 
       function limpiarError() {
         cdrErrorBox.style.display = 'none';
-        cdrErrorBox.textContent = '';
+        cdrErrorText.textContent = '';
+        btnReintentar.style.display = 'none';
       }
 
-      async function cargarResumen() {
-        try {
-          const res = await fetch('/api/cuenta/cdr/resumen');
-          const data = await res.json().catch(() => ({}));
-          if (!res.ok || !data.ok || !data.resumen) {
-            sumLlamadas.textContent = 'No disponible';
-            sumMinutos.textContent = 'No disponible';
-            sumCosto.textContent = 'No disponible';
-            mostrarError(data.error || 'No se pudieron consultar tus llamadas');
-            return;
-          }
-          const r = data.resumen;
-          sumLlamadas.textContent = String(r.total_llamadas);
-          sumMinutos.textContent = Number(r.total_minutos).toFixed(2);
-          sumCosto.textContent = `${Number(r.total_costo).toFixed(2)} ${r.moneda}`;
-        } catch {
-          sumLlamadas.textContent = 'No disponible';
-          sumMinutos.textContent = 'No disponible';
-          sumCosto.textContent = 'No disponible';
-          mostrarError('No se pudieron consultar tus llamadas');
+      function renderEstadoCargando(incluirResumen: boolean) {
+        limpiarError();
+        cdrSlowNotice.style.display = 'none';
+        cdrTableContainer.innerHTML = `<div class="empty-state"><span class="spinner"></span> Cargando llamadas…</div>`;
+        if (incluirResumen) {
+          resumenLoading.style.display = 'block';
+          sumLlamadas.innerHTML = `<span class="spinner"></span>`;
+          sumMinutos.innerHTML = `<span class="spinner"></span>`;
+          sumCosto.innerHTML = `<span class="spinner"></span>`;
         }
       }
 
-      async function cargarTabla() {
-        limpiarError();
+      async function cargarPanelLlamadas(incluirResumen = true) {
+        if (activeController) {
+          activeController.abort();
+        }
+        const controller = new AbortController();
+        activeController = controller;
+
+        renderEstadoCargando(incluirResumen);
+
+        const slowTimer = setTimeout(() => {
+          cdrSlowNotice.style.display = 'block';
+        }, 5000);
+        const timeoutTimer = setTimeout(() => {
+          controller.abort();
+        }, 15000);
+
         const dir = selectDireccion.value;
         const qs = new URLSearchParams({ pagina: String(currentPage), limite: String(pageSize) });
         if (dir) qs.set('direccion', dir);
 
         try {
-          const res = await fetch(`/api/cuenta/cdr?${qs.toString()}`);
-          const data = await res.json().catch(() => ({}));
-          if (!res.ok || !data.ok || !Array.isArray(data.llamadas)) {
+          const [resResumen, resTabla] = await Promise.all([
+            incluirResumen ? fetch('/api/cuenta/cdr/resumen', { signal: controller.signal }) : Promise.resolve(null),
+            fetch(`/api/cuenta/cdr?${qs.toString()}`, { signal: controller.signal })
+          ]);
+
+          if (resResumen) {
+            const dataRes = await resResumen.json().catch(() => ({}));
+            if (!resResumen.ok || !dataRes.ok || !dataRes.resumen) {
+              sumLlamadas.textContent = 'No disponible';
+              sumMinutos.textContent = 'No disponible';
+              sumCosto.textContent = 'No disponible';
+              cdrTableContainer.innerHTML = '';
+              mostrarError('No se pudieron consultar tus llamadas', true);
+              return;
+            }
+            const r = dataRes.resumen;
+            sumLlamadas.textContent = String(r.total_llamadas);
+            sumMinutos.textContent = Number(r.total_minutos).toFixed(2);
+            sumCosto.textContent = `${Number(r.total_costo).toFixed(2)} ${r.moneda}`;
+          }
+
+          const data = await resTabla.json().catch(() => ({}));
+          if (!resTabla.ok || !data.ok || !Array.isArray(data.llamadas)) {
             cdrTableContainer.innerHTML = '';
-            mostrarError('No se pudieron consultar tus llamadas');
+            mostrarError('No se pudieron consultar tus llamadas', true);
             return;
           }
 
@@ -428,26 +489,45 @@ const mesTitulo = `${mesNombre} de ${ahora.getUTCFullYear()}`;
           btnPrevPage.disabled = currentPage <= 1;
           btnNextPage.disabled = currentPage >= totalPages;
         } catch {
+          if (incluirResumen) {
+            sumLlamadas.textContent = 'No disponible';
+            sumMinutos.textContent = 'No disponible';
+            sumCosto.textContent = 'No disponible';
+          }
           cdrTableContainer.innerHTML = '';
-          mostrarError('No se pudieron consultar tus llamadas');
+          mostrarError('No se pudieron consultar tus llamadas', true);
+        } finally {
+          clearTimeout(slowTimer);
+          clearTimeout(timeoutTimer);
+          cdrSlowNotice.style.display = 'none';
+          if (incluirResumen) {
+            resumenLoading.style.display = 'none';
+          }
+          if (activeController === controller) {
+            activeController = null;
+          }
         }
       }
 
+      btnReintentar.addEventListener('click', () => {
+        cargarPanelLlamadas(true);
+      });
+
       selectDireccion.addEventListener('change', () => {
         currentPage = 1;
-        cargarTabla();
+        cargarPanelLlamadas(false);
       });
 
       btnPrevPage.addEventListener('click', () => {
         if (currentPage > 1) {
           currentPage--;
-          cargarTabla();
+          cargarPanelLlamadas(false);
         }
       });
 
       btnNextPage.addEventListener('click', () => {
         currentPage++;
-        cargarTabla();
+        cargarPanelLlamadas(false);
       });
 
       btnExportCsv.addEventListener('click', async () => {
@@ -586,8 +666,8 @@ const mesTitulo = `${mesNombre} de ${ahora.getUTCFullYear()}`;
         }
       });
 
-      cargarResumen();
-      cargarTabla();
+      cargarPanelLlamadas(true);
+      fetch('/api/cuenta/cdr/sincronizar', { method: 'POST' }).catch(() => {});
     })();
   </script>
 </body>
