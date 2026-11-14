@@ -1,10 +1,15 @@
 import type { APIRoute } from 'astro';
 
 const TELVY_GATE_URL = process.env.VOIP_GATE_URL || process.env.TELVY_GATE_URL || 'http://host.docker.internal:4100';
+const CLIENT_API_INTERNAL_KEY = process.env.VOIP_GATE_INTERNAL_KEY || process.env.CLIENT_API_INTERNAL_KEY || '';
 
 export const GET: APIRoute = async () => {
   try {
-    const res = await fetch(`${TELVY_GATE_URL}/v1/publico/paquetes`);
+    const res = await fetch(`${TELVY_GATE_URL}/v1/publico/paquetes`, {
+      headers: {
+        'X-Internal-Key': CLIENT_API_INTERNAL_KEY
+      }
+    });
     const data = await res.json().catch(() => ({ ok: false, paquetes: [] }));
     return new Response(JSON.stringify(data), {
       status: res.status,
@@ -17,3 +22,4 @@ export const GET: APIRoute = async () => {
     );
   }
 };
+
