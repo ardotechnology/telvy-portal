@@ -24,6 +24,7 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./certs:/etc/caddy/certs:ro
+      - /opt/telvy-web:/srv/telvy-web:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:

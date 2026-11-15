@@ -2,3 +2,27 @@ portal.telvy.net {
     tls /etc/caddy/certs/origin.pem /etc/caddy/certs/origin-key.pem
     reverse_proxy 127.0.0.1:3000
 }
+
+beta.telvy.net {
+    encode gzip
+    root * /srv/telvy-web
+
+    header /js/* Cache-Control "no-store"
+    header /css/* Cache-Control "no-store"
+
+    handle /api/publico/* {
+        reverse_proxy 127.0.0.1:3000
+    }
+
+    @portada path /
+    rewrite @portada /static/index.html
+
+    @fuente path *.php *.phtml *.sh *.sql *.md
+    @interno path /includes/* /new/* /dashboard/* /scripts/* /src/* /docs/* /utilities/* /tmp/* /vendor/* /seo/* /linkwork/* /popup/* /.git/* /.antigravity/* /.agents/* /composer.json /composer.lock /AGENTS.md /README.md /funcionamiento.md
+    respond @fuente 404
+    respond @interno 404
+
+    file_server {
+        hide .git .antigravity .agents .gitignore
+    }
+}
