@@ -21,50 +21,58 @@ export async function createSupabaseUserWithConfirmation(params: {
   telefono: string;
   emailRedirectTo?: string;
 }): Promise<{ ok: boolean; status: number; userId?: string; error?: string }> {
-  const supabase = getServiceClient();
-  const { data: created, error: createErr } = await supabase.auth.admin.createUser({
-    email: params.email,
-    password: params.password,
-    email_confirm: false,
-    user_metadata: {
-      nombre: params.nombre,
-      telefono: params.telefono
+  try {
+    const supabase = getServiceClient();
+    const { data: created, error: createErr } = await supabase.auth.admin.createUser({
+      email: params.email,
+      password: params.password,
+      email_confirm: false,
+      user_metadata: {
+        nombre: params.nombre,
+        telefono: params.telefono
+      }
+    });
+
+    if (createErr || !created?.user) {
+      const msg = String(createErr?.message || 'Error creando usuario en Supabase');
+      const isDuplicate =
+        msg.toLowerCase().includes('already') ||
+        msg.toLowerCase().includes('registered') ||
+        (createErr as any)?.status === 422;
+      return {
+        ok: false,
+        status: isDuplicate ? 409 : 502,
+        error: isDuplicate ? 'Este correo ya tiene cuenta, inicia sesión' : msg
+      };
     }
-  });
 
-  if (createErr || !created?.user) {
-    const msg = String(createErr?.message || 'Error creando usuario en Supabase');
-    const isDuplicate =
-      msg.toLowerCase().includes('already') ||
-      msg.toLowerCase().includes('registered') ||
-      (createErr as any)?.status === 422;
+    const { error: resendErr } = await supabase.auth.resend({
+      type: 'signup',
+      email: params.email,
+      options: params.emailRedirectTo ? { emailRedirectTo: params.emailRedirectTo } : undefined
+    });
+
+    if (resendErr) {
+      return {
+        ok: false,
+        status: 502,
+        userId: created.user.id,
+        error: `Usuario creado pero falló envío de correo de confirmación: ${resendErr.message}`
+      };
+    }
+
     return {
-      ok: false,
-      status: isDuplicate ? 409 : 502,
-      error: isDuplicate ? 'El correo ya está registrado' : msg
+      ok: true,
+      status: 201,
+      userId: created.user.id
     };
-  }
-
-  const { error: resendErr } = await supabase.auth.resend({
-    type: 'signup',
-    email: params.email,
-    options: params.emailRedirectTo ? { emailRedirectTo: params.emailRedirectTo } : undefined
-  });
-
-  if (resendErr) {
+  } catch (err: any) {
     return {
       ok: false,
       status: 502,
-      userId: created.user.id,
-      error: `Usuario creado pero falló envío de correo de confirmación: ${resendErr.message}`
+      error: err?.message || 'No se pudo conectar con Supabase Auth'
     };
   }
-
-  return {
-    ok: true,
-    status: 201,
-    userId: created.user.id
-  };
 }
 
 export async function verifySupabaseEmailToken(params: {

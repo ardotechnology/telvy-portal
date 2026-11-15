@@ -80,11 +80,30 @@ export const POST: APIRoute = async (ctx) => {
 
     const motorData = (await motorRes.json().catch(() => ({ ok: false, error: 'Respuesta inválida del motor' }))) as any;
     if (!motorRes.ok || !motorData.ok) {
-      return new Response(JSON.stringify(motorData), { status: motorRes.status, headers });
+      const statusOut = motorRes.status >= 500 ? 502 : motorRes.status;
+      const errorOut =
+        statusOut === 409
+          ? 'Este correo ya tiene cuenta, inicia sesión'
+          : (motorData.error || 'El motor no pudo procesar el registro');
+      return new Response(JSON.stringify({ ok: false, error: errorOut }), { status: statusOut, headers });
     }
 
-    // Si es una alta nueva (no idempotente), crear usuario en Supabase y enviar correo de confirmación
-    if (!motorData.idempotente && motorData.alta?.id) {
+    if (motorData.alta?.estado !== 'pendiente') {
+      return new Response(
+        JSON.stringify({ ok: false, error: 'El alta no quedó en estado pendiente' }),
+        { status: 502, headers }
+      );
+    }
+
+    if (motorData.idempotente) {
+      if (!motorData.alta?.auth_vinculado) {
+        return new Response(
+          JSON.stringify({ ok: false, error: 'El registro previo no completó el envío de correo' }),
+          { status: 502, headers }
+        );
+      }
+    } else if (motorData.alta?.id) {
+      // Alta nueva: crear usuario en Supabase y enviar correo de confirmación
       const origin = ctx.url.origin;
       const supaRes = await createSupabaseUserWithConfirmation({
         email: correo,
@@ -106,10 +125,12 @@ export const POST: APIRoute = async (ctx) => {
       }).catch(() => {});
 
       if (!supaRes.ok) {
-        return new Response(
-          JSON.stringify({ ok: false, error: supaRes.error || 'No se pudo enviar el correo de confirmación' }),
-          { status: supaRes.status, headers }
-        );
+        const errStatus = supaRes.status === 409 ? 409 : 502;
+        const errMsg =
+          errStatus === 409
+            ? 'Este correo ya tiene cuenta, inicia sesión'
+            : (supaRes.error || 'No se pudo enviar el correo de confirmación');
+        return new Response(JSON.stringify({ ok: false, error: errMsg }), { status: errStatus, headers });
       }
     }
 
