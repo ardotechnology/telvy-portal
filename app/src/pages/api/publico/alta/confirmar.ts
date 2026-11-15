@@ -11,33 +11,52 @@ export const OPTIONS: APIRoute = async ({ request }) => {
   return new Response(null, { status: 204, headers: buildCorsHeaders(request) });
 };
 
+function wantsHtmlRedirect(request: Request): boolean {
+  if (request.method !== 'GET') return false;
+  const accept = request.headers.get('accept') || '';
+  return accept.includes('text/html') && !accept.includes('application/json');
+}
+
+function redirectConfirmacion(estado: 'ok' | 'error', motivo?: string): Response {
+  const qs = new URLSearchParams({ estado });
+  if (motivo) qs.set('motivo', motivo);
+  return new Response(null, {
+    status: 302,
+    headers: {
+      Location: `/alta-confirmada?${qs.toString()}`,
+      'Cache-Control': 'no-store'
+    }
+  });
+}
+
 async function handleConfirmacion(
   ctx: Parameters<APIRoute>[0],
   params: { token_hash?: string; type?: string; code?: string; access_token?: string }
 ): Promise<Response> {
   const headers = new Headers(buildCorsHeaders(ctx.request));
   const clientIp = getClientIp(ctx);
+  const isBrowser = wantsHtmlRedirect(ctx.request);
 
   if (!checkPublicRateLimit(clientIp, 'publico_alta_confirmar', 20, 60_000)) {
-    return new Response(
-      JSON.stringify({ ok: false, error: 'Demasiados intentos de confirmación.' }),
-      { status: 429, headers }
-    );
+    const msg = 'Demasiados intentos de confirmación.';
+    return isBrowser
+      ? redirectConfirmacion('error', msg)
+      : new Response(JSON.stringify({ ok: false, error: msg }), { status: 429, headers });
   }
 
   if (!params.token_hash && !params.code && !params.access_token) {
-    return new Response(
-      JSON.stringify({ ok: false, error: 'Token de confirmación requerido' }),
-      { status: 400, headers }
-    );
+    const msg = 'Token de confirmación requerido o ausente.';
+    return isBrowser
+      ? redirectConfirmacion('error', msg)
+      : new Response(JSON.stringify({ ok: false, error: msg }), { status: 400, headers });
   }
 
   const verified = await verifySupabaseEmailToken(params);
   if (!verified.ok || !verified.userId) {
-    return new Response(
-      JSON.stringify({ ok: false, error: verified.error || 'Token inválido' }),
-      { status: verified.status || 400, headers }
-    );
+    const msg = verified.error || 'El enlace de confirmación es inválido o ya expiró.';
+    return isBrowser
+      ? redirectConfirmacion('error', msg)
+      : new Response(JSON.stringify({ ok: false, error: msg }), { status: verified.status || 400, headers });
   }
 
   const motorRes = await forwardToMotor('/v1/publico/alta/confirmar', {
@@ -50,7 +69,13 @@ async function handleConfirmacion(
     })
   });
 
-  const data = await motorRes.json().catch(() => ({ ok: false, error: 'Respuesta inválida del motor' }));
+  const data = (await motorRes.json().catch(() => ({ ok: false, error: 'Respuesta inválida del motor' }))) as any;
+  if (isBrowser) {
+    return motorRes.ok && data.ok
+      ? redirectConfirmacion('ok')
+      : redirectConfirmacion('error', data.error || 'No se pudo confirmar tu alta.');
+  }
+
   return new Response(JSON.stringify(data), { status: motorRes.status, headers });
 }
 

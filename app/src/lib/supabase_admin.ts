@@ -1,5 +1,10 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
+export function getPortalConfirmRedirectUrl(): string {
+  const base = (process.env.PUBLIC_PORTAL_URL || 'https://portal.telvy.net').trim().replace(/\/+$/, '');
+  return `${base}/api/publico/alta/confirmar`;
+}
+
 function getServiceClient(): SupabaseClient {
   const url = process.env.SUPABASE_URL || '';
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
@@ -112,4 +117,23 @@ export async function verifySupabaseEmailToken(params: {
   }
 
   return { ok: false, status: 400, error: 'Token de confirmación requerido' };
+}
+
+export async function resendSupabaseConfirmationEmail(
+  email: string
+): Promise<{ ok: boolean; status: number; error?: string }> {
+  try {
+    const supabase = getServiceClient();
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email: email.trim().toLowerCase(),
+      options: { emailRedirectTo: getPortalConfirmRedirectUrl() }
+    });
+    if (error) {
+      return { ok: false, status: 400, error: error.message };
+    }
+    return { ok: true, status: 200 };
+  } catch (err: any) {
+    return { ok: false, status: 502, error: err?.message || 'Error conectando con Supabase Auth' };
+  }
 }

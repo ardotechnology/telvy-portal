@@ -7,7 +7,7 @@ import {
   forwardToMotor,
   getClientIp
 } from '../../../lib/public_did_proxy';
-import { createSupabaseUserWithConfirmation } from '../../../lib/supabase_admin';
+import { createSupabaseUserWithConfirmation, getPortalConfirmRedirectUrl } from '../../../lib/supabase_admin';
 
 export const OPTIONS: APIRoute = async ({ request }) => {
   return new Response(null, { status: 204, headers: buildCorsHeaders(request) });
@@ -104,13 +104,12 @@ export const POST: APIRoute = async (ctx) => {
       }
     } else if (motorData.alta?.id) {
       // Alta nueva: crear usuario en Supabase y enviar correo de confirmación
-      const origin = ctx.url.origin;
       const supaRes = await createSupabaseUserWithConfirmation({
         email: correo,
         password,
         nombre: String(body?.nombre || body?.full_name || '').trim(),
         telefono: String(body?.telefono || body?.phone || '').trim(),
-        emailRedirectTo: `${origin}/api/publico/alta/confirmar`
+        emailRedirectTo: getPortalConfirmRedirectUrl()
       });
 
       await forwardToMotor('/v1/publico/alta/vincular-auth', {

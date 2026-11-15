@@ -35,6 +35,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
     pathname === '/recuperar' ||
     pathname === '/cuenta-no-vinculada' ||
     pathname === '/paquetes' ||
+    pathname === '/alta-confirmada' ||
     pathname.startsWith('/api/publico/') ||
     pathname.startsWith('/_astro') ||
     pathname.startsWith('/api/auth') ||

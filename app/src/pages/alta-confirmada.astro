@@ -1,0 +1,82 @@
+---
+const estado = Astro.url.searchParams.get('estado') || 'error';
+const motivo =
+  Astro.url.searchParams.get('motivo') ||
+  'El enlace de confirmación es inválido, ya fue usado o expiró.';
+const esExito = estado === 'ok';
+---
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{esExito ? 'Correo confirmado — Telvy' : 'Confirmación de correo — Telvy'}</title>
+    <style>
+      body { font-family: system-ui, -apple-system, sans-serif; background: #f8fafc; color: #0f172a; margin: 0; display: grid; place-items: center; min-height: 100vh; padding: 1.5rem; }
+      .card { max-width: 460px; width: 100%; background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 2rem; box-shadow: 0 10px 25px rgba(15, 23, 42, 0.06); }
+      h1 { font-size: 1.35rem; margin: 0 0 0.75rem; }
+      p { color: #475569; line-height: 1.55; margin: 0 0 1.25rem; }
+      .btn { display: inline-block; background: #0f172a; color: #fff; text-decoration: none; border: none; border-radius: 8px; padding: 0.75rem 1.25rem; font-weight: 600; cursor: pointer; font-size: 0.95rem; }
+      .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+      input { width: 100%; box-sizing: border-box; padding: 0.7rem 0.85rem; border: 1px solid #cbd5e1; border-radius: 8px; margin-bottom: 0.75rem; font-size: 0.95rem; }
+      .msg { margin-top: 0.75rem; font-size: 0.9rem; }
+    </style>
+    <script is:inline>
+      // P5: ningún token o fragmento queda en la barra de direcciones del portal
+      if (window.location.hash) {
+        history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
+    </script>
+  </head>
+  <body>
+    <main class="card">
+      {esExito ? (
+        <>
+          <h1>¡Correo confirmado!</h1>
+          <p>
+            Tu cuenta quedó confirmada y estamos activando tu línea y número telefónico en segundo plano.
+            Ya puedes iniciar sesión en tu portal.
+          </p>
+          <a href="/login" class="btn">Ir a iniciar sesión</a>
+        </>
+      ) : (
+        <>
+          <h1>No se pudo confirmar tu correo</h1>
+          <p>{motivo}</p>
+          <form id="resendForm">
+            <input type="email" id="resendEmail" required placeholder="Ingresa tu correo registrado" />
+            <button type="submit" id="resendBtn" class="btn">Reenviar correo de confirmación</button>
+            <p id="resendStatus" class="msg"></p>
+          </form>
+          <script is:inline>
+            const f = document.getElementById('resendForm');
+            const st = document.getElementById('resendStatus');
+            const btn = document.getElementById('resendBtn');
+            f?.addEventListener('submit', async (e) => {
+              e.preventDefault();
+              const email = document.getElementById('resendEmail')?.value?.trim();
+              if (!email) return;
+              btn.disabled = true;
+              st.textContent = 'Enviando...';
+              try {
+                const r = await fetch('/api/publico/alta/reenviar', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ correo: email })
+                });
+                const d = await r.json().catch(() => ({}));
+                st.style.color = r.ok ? '#047857' : '#b91c1c';
+                st.textContent = d.mensaje || d.error || 'No se pudo reenviar el correo.';
+              } catch {
+                st.style.color = '#b91c1c';
+                st.textContent = 'Error de conexión al reenviar.';
+              } finally {
+                btn.disabled = false;
+              }
+            });
+          </script>
+        </>
+      )}
+    </main>
+  </body>
+</html>
