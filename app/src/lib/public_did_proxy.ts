@@ -119,7 +119,7 @@ export function buildCorsHeaders(request: Request): Record<string, string> {
     headers['Access-Control-Allow-Origin'] = origin;
     headers['Access-Control-Allow-Credentials'] = 'true';
     headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS';
-    headers['Access-Control-Allow-Headers'] = 'Content-Type, X-Public-Session';
+    headers['Access-Control-Allow-Headers'] = 'Content-Type, X-Public-Session, Idempotency-Key';
     headers['Vary'] = 'Origin';
   }
   return headers;

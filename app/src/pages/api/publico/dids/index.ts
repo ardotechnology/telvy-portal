@@ -30,8 +30,13 @@ export const GET: APIRoute = async (ctx) => {
 
   try {
     const lada = ctx.url.searchParams.get('lada') || '';
+    const localidad = ctx.url.searchParams.get('localidad') || '';
     const n = ctx.url.searchParams.get('n') || '20';
-    const qs = `?lada=${encodeURIComponent(lada)}&n=${encodeURIComponent(n)}`;
+    const qsParams = new URLSearchParams();
+    if (lada) qsParams.set('lada', lada);
+    if (localidad) qsParams.set('localidad', localidad);
+    qsParams.set('n', n);
+    const qs = `?${qsParams.toString()}`;
     const res = await forwardToMotor(`/v1/publico/dids${qs}`, {
       method: 'GET',
       clientIp
