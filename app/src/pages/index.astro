@@ -3,6 +3,8 @@ import { formatearPildoraEstado } from '../lib/estado_pill';
 import {
   esFichaFiscalPendiente,
   obtenerDatosFiscalesSentinel,
+  usaRfcGenerico,
+  type AvisoRevisionFiscal,
   type DatosFiscalesFicha
 } from '../lib/sentinel_fiscales';
 
@@ -126,6 +128,7 @@ const sinServiciosAprovisionados = sinServiciosActivos;
 // Datos fiscales del cliente (obtenidos del lado del servidor desde Sentinel, nunca desde el navegador)
 const servidorCuenta = saldoData?.servidor || process.env.TELVY_DEFAULT_SERVIDOR || 'MB-Edge-MTY';
 let datosFiscales: DatosFiscalesFicha | null = null;
+let revisionFiscal: AvisoRevisionFiscal | null = null;
 let errorFiscales: string | null = null;
 try {
   const resFiscales = await obtenerDatosFiscalesSentinel({
@@ -134,6 +137,7 @@ try {
   });
   if (resFiscales.ok && resFiscales.cliente) {
     datosFiscales = resFiscales.cliente;
+    revisionFiscal = resFiscales.revision_fiscal ?? null;
   } else {
     errorFiscales = resFiscales.error || null;
   }
@@ -141,6 +145,7 @@ try {
   errorFiscales = err?.message || 'No se pudieron consultar los datos fiscales';
 }
 const fiscalPendiente = esFichaFiscalPendiente(datosFiscales);
+const fiscalGenerico = usaRfcGenerico(datosFiscales);
 ---
 
 <!DOCTYPE html>
@@ -883,10 +888,25 @@ const fiscalPendiente = esFichaFiscalPendiente(datosFiscales);
         </span>
       </div>
 
+      {revisionFiscal?.pendiente && (
+        <div class="fiscal-alert" id="fiscalRevisionAlert">
+          <strong>Revisa tus datos fiscales:</strong> tu primera factura está lista para emitirse.
+          Si deseas factura a tu nombre, completa tus datos antes del{' '}
+          <strong>{revisionFiscal.vence_at ? new Date(revisionFiscal.vence_at).toLocaleString('es-MX') : 'plazo de 48 horas'}</strong>;
+          de lo contrario, se emitirá automáticamente a Público en General.
+        </div>
+      )}
+
+      {!revisionFiscal?.pendiente && !fiscalPendiente && fiscalGenerico && (
+        <div class="fiscal-alert" id="fiscalInvitacionAlert">
+          <strong>Facturación a Público en General:</strong> tus facturas se emiten con RFC genérico.
+          Si deseas recibir facturas fiscales a tu nombre o razón social, puedes completar tus datos fiscales aquí en cualquier momento.
+        </div>
+      )}
+
       {fiscalPendiente && (
         <div class="fiscal-alert" id="fiscalPendingAlert">
-          <strong>Datos fiscales pendientes:</strong> sin datos fiscales verificados no se puede emitir factura.
-          Completa tu RFC real y datos fiscales para habilitar la facturación.
+          <strong>Datos fiscales en borrador:</strong> completa o confirma tus datos fiscales para habilitar la facturación.
         </div>
       )}
 

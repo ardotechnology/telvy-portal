@@ -5,7 +5,8 @@ import path from 'node:path';
 import {
   esFichaFiscalPendiente,
   guardarDatosFiscalesSentinel,
-  obtenerDatosFiscalesSentinel
+  obtenerDatosFiscalesSentinel,
+  usaRfcGenerico
 } from '../app/src/lib/sentinel_fiscales.ts';
 import { GET, POST } from '../app/src/pages/api/cuenta/datos-fiscales.ts';
 
@@ -195,10 +196,41 @@ async function main() {
     assert.equal(dataReadback.cliente.rfc, 'TEL210101AB2');
     assert.equal(dataReadback.cliente.kyc_status, 'verificado');
 
-    // L5: la clave de integración NO aparece en index.astro (<script>/HTML) ni en dist/client/
+    // L5 + N7: la clave de integración NO aparece en index.astro (<script>/HTML) ni en dist/client/
+    // y el portal muestra invitación (no bloqueo) cuando kyc_status='verificado' con RFC genérico
+    assert.equal(
+      esFichaFiscalPendiente({
+        id: 'x',
+        rfc: 'XAXX010101000',
+        razon_social: 'Cliente Nuevo',
+        nombre_comercial: 'Cliente Nuevo',
+        regimen_fiscal: '616',
+        codigo_postal: '76100',
+        uso_cfdi_sat: 'S01',
+        correo_facturacion: null,
+        kyc_status: 'verificado'
+      }),
+      false,
+      'N7: ficha verificada con XAXX010101000 NO debe tratarse como pendiente'
+    );
+    assert.equal(
+      usaRfcGenerico({
+        id: 'x',
+        rfc: 'XAXX010101000',
+        razon_social: 'Cliente Nuevo',
+        nombre_comercial: 'Cliente Nuevo',
+        regimen_fiscal: '616',
+        codigo_postal: '76100',
+        uso_cfdi_sat: 'S01',
+        correo_facturacion: null,
+        kyc_status: 'verificado'
+      }),
+      true
+    );
     const indexSrc = fs.readFileSync(path.join(process.cwd(), 'app/src/pages/index.astro'), 'utf8');
     assert.match(indexSrc, /seccion-datos-fiscales/);
-    assert.match(indexSrc, /sin datos fiscales verificados no se puede emitir factura/i);
+    assert.match(indexSrc, /Facturación a Público en General/i);
+    assert.equal(indexSrc.includes('sin datos fiscales verificados no se puede emitir factura'), false, 'N7: ya no debe mostrar mensaje de bloqueo');
     assert.equal(indexSrc.includes('SENTINEL_INTEGRACION_KEY'), false, 'L5: index.astro no debe referenciar la clave');
 
     const clientFiles = walkDir(path.join(process.cwd(), 'app/dist/client'));

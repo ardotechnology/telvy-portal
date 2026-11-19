@@ -31,10 +31,21 @@ export interface SentinelClientOptions {
   fetcher?: typeof fetch;
 }
 
+export interface AvisoRevisionFiscal {
+  pendiente: boolean;
+  factura_id: string | null;
+  vence_at: string | null;
+}
+
 export function esFichaFiscalPendiente(ficha: DatosFiscalesFicha | null): boolean {
   if (!ficha) return true;
+  return ficha.kyc_status === 'pendiente';
+}
+
+export function usaRfcGenerico(ficha: DatosFiscalesFicha | null): boolean {
+  if (!ficha) return false;
   const rfc = String(ficha.rfc || '').trim().toUpperCase();
-  return ficha.kyc_status === 'pendiente' || rfc === 'XAXX010101000' || !rfc;
+  return rfc === 'XAXX010101000' || rfc === 'XEXX010101000';
 }
 
 function getSentinelConfig(opts?: SentinelClientOptions) {
@@ -51,7 +62,13 @@ function getSentinelConfig(opts?: SentinelClientOptions) {
 export async function obtenerDatosFiscalesSentinel(
   params: { servidor?: string; cliente_username: string },
   opts?: SentinelClientOptions
-): Promise<{ ok: boolean; status: number; cliente?: DatosFiscalesFicha; error?: string }> {
+): Promise<{
+  ok: boolean;
+  status: number;
+  cliente?: DatosFiscalesFicha;
+  revision_fiscal?: AvisoRevisionFiscal | null;
+  error?: string;
+}> {
   const { baseUrl, key, doFetch } = getSentinelConfig(opts);
   if (!key) {
     return { ok: false, status: 500, error: 'Configuración de integración no disponible' };
@@ -72,7 +89,12 @@ export async function obtenerDatosFiscalesSentinel(
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok && data?.ok && data?.cliente) {
-      return { ok: true, status: res.status, cliente: data.cliente };
+      return {
+        ok: true,
+        status: res.status,
+        cliente: data.cliente,
+        revision_fiscal: data.revision_fiscal ?? null
+      };
     }
     return {
       ok: false,
