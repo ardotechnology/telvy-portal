@@ -1,5 +1,10 @@
 ---
 import { formatearPildoraEstado } from '../lib/estado_pill';
+import {
+  esFichaFiscalPendiente,
+  obtenerDatosFiscalesSentinel,
+  type DatosFiscalesFicha
+} from '../lib/sentinel_fiscales';
 
 // Verificación de sesión: el cliente se obtiene EXCLUSIVAMENTE de la sesión autenticada en el servidor.
 const cliente = Astro.locals.portalCuenta?.cliente;
@@ -117,6 +122,25 @@ const sinServiciosActivos =
   didsActivos.length === 0;
 
 const sinServiciosAprovisionados = sinServiciosActivos;
+
+// Datos fiscales del cliente (obtenidos del lado del servidor desde Sentinel, nunca desde el navegador)
+const servidorCuenta = saldoData?.servidor || process.env.TELVY_DEFAULT_SERVIDOR || 'MB-Edge-MTY';
+let datosFiscales: DatosFiscalesFicha | null = null;
+let errorFiscales: string | null = null;
+try {
+  const resFiscales = await obtenerDatosFiscalesSentinel({
+    servidor: servidorCuenta,
+    cliente_username: cliente
+  });
+  if (resFiscales.ok && resFiscales.cliente) {
+    datosFiscales = resFiscales.cliente;
+  } else {
+    errorFiscales = resFiscales.error || null;
+  }
+} catch (err: any) {
+  errorFiscales = err?.message || 'No se pudieron consultar los datos fiscales';
+}
+const fiscalPendiente = esFichaFiscalPendiente(datosFiscales);
 ---
 
 <!DOCTYPE html>
@@ -266,6 +290,101 @@ const sinServiciosAprovisionados = sinServiciosActivos;
       font-size: 13px;
       color: var(--color-ash);
       margin-bottom: 18px;
+    }
+
+    /* Bloque: Datos fiscales */
+    .fiscal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .fiscal-alert {
+      background-color: #fffbeb;
+      border: 1px solid #fcd34d;
+      color: #92400e;
+      border-radius: 10px;
+      padding: 12px 16px;
+      font-size: 13px;
+      margin-bottom: 16px;
+    }
+
+    .fiscal-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+    }
+
+    .fiscal-field {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .fiscal-field label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--color-ash);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .fiscal-field input {
+      width: 100%;
+      padding: 9px 12px;
+      border: 1px solid var(--color-smoke);
+      border-radius: var(--radius-sm);
+      background-color: var(--color-paper);
+      color: var(--color-ink);
+      font-size: 14px;
+    }
+
+    .fiscal-field input:focus {
+      outline: 2px solid var(--color-obsidian);
+      outline-offset: -1px;
+    }
+
+    .fiscal-actions {
+      margin-top: 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .fiscal-btn {
+      background-color: var(--color-obsidian);
+      color: #ffffff;
+      border: none;
+      border-radius: var(--radius-sm);
+      padding: 10px 18px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .fiscal-btn:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .fiscal-feedback {
+      font-size: 13px;
+      display: none;
+    }
+
+    .fiscal-feedback.ok {
+      display: block;
+      color: var(--color-status-ok);
+      font-weight: 600;
+    }
+
+    .fiscal-feedback.err {
+      display: block;
+      color: #b91c1c;
+      font-weight: 500;
     }
 
     /* Bloque 1: Saldo */
@@ -749,6 +868,132 @@ const sinServiciosAprovisionados = sinServiciosActivos;
       )}
     </section>
 
+    <!-- BLOQUE: DATOS FISCALES -->
+    <section class="card" id="seccion-datos-fiscales">
+      <div class="fiscal-header">
+        <div>
+          <h2 class="card-title">Datos fiscales</h2>
+          <p class="card-desc">Información para la emisión de tus facturas CFDI 4.0.</p>
+        </div>
+        <span
+          id="fiscalStatusPill"
+          class={`pill ${fiscalPendiente ? 'pill-offline' : 'pill-online'}`}
+        >
+          {fiscalPendiente ? 'Pendiente' : 'Verificado'}
+        </span>
+      </div>
+
+      {fiscalPendiente && (
+        <div class="fiscal-alert" id="fiscalPendingAlert">
+          <strong>Datos fiscales pendientes:</strong> sin datos fiscales verificados no se puede emitir factura.
+          Completa tu RFC real y datos fiscales para habilitar la facturación.
+        </div>
+      )}
+
+      {errorFiscales && !datosFiscales && (
+        <div class="fiscal-alert">
+          No se pudieron cargar los datos fiscales actuales ({errorFiscales}). Puedes capturarlos y guardarlos aquí.
+        </div>
+      )}
+
+      <form id="formDatosFiscales" novalidate>
+        <div class="fiscal-grid">
+          <div class="fiscal-field">
+            <label for="fiscal_rfc">RFC</label>
+            <input
+              id="fiscal_rfc"
+              name="rfc"
+              type="text"
+              maxlength="13"
+              required
+              placeholder="Ej. ACM200101AB1"
+              value={datosFiscales?.rfc || ''}
+            />
+          </div>
+
+          <div class="fiscal-field">
+            <label for="fiscal_razon_social">Razón social</label>
+            <input
+              id="fiscal_razon_social"
+              name="razon_social"
+              type="text"
+              required
+              placeholder="Nombre o razón social sin régimen societario"
+              value={datosFiscales?.razon_social || ''}
+            />
+          </div>
+
+          <div class="fiscal-field">
+            <label for="fiscal_nombre_comercial">Nombre comercial</label>
+            <input
+              id="fiscal_nombre_comercial"
+              name="nombre_comercial"
+              type="text"
+              placeholder="Opcional"
+              value={datosFiscales?.nombre_comercial || ''}
+            />
+          </div>
+
+          <div class="fiscal-field">
+            <label for="fiscal_regimen_fiscal">Régimen fiscal (clave SAT)</label>
+            <input
+              id="fiscal_regimen_fiscal"
+              name="regimen_fiscal"
+              type="text"
+              maxlength="3"
+              required
+              placeholder="Ej. 601"
+              value={datosFiscales?.regimen_fiscal || ''}
+            />
+          </div>
+
+          <div class="fiscal-field">
+            <label for="fiscal_codigo_postal">Código postal</label>
+            <input
+              id="fiscal_codigo_postal"
+              name="codigo_postal"
+              type="text"
+              maxlength="5"
+              required
+              placeholder="Ej. 64000"
+              value={datosFiscales?.codigo_postal || ''}
+            />
+          </div>
+
+          <div class="fiscal-field">
+            <label for="fiscal_uso_cfdi_sat">Uso del CFDI</label>
+            <input
+              id="fiscal_uso_cfdi_sat"
+              name="uso_cfdi_sat"
+              type="text"
+              maxlength="3"
+              required
+              placeholder="Ej. G03"
+              value={datosFiscales?.uso_cfdi_sat || ''}
+            />
+          </div>
+
+          <div class="fiscal-field">
+            <label for="fiscal_correo_facturacion">Correo de facturación</label>
+            <input
+              id="fiscal_correo_facturacion"
+              name="correo_facturacion"
+              type="email"
+              placeholder="facturacion@empresa.mx"
+              value={datosFiscales?.correo_facturacion || datosFiscales?.correo_cuenta || ''}
+            />
+          </div>
+        </div>
+
+        <div class="fiscal-actions">
+          <button type="submit" id="btnGuardarFiscales" class="fiscal-btn">
+            Guardar datos fiscales
+          </button>
+          <div id="fiscalFeedback" class="fiscal-feedback" role="status" aria-live="polite"></div>
+        </div>
+      </form>
+    </section>
+
     <footer>
       Telvy Telecommunications · Portal de Cliente · Autenticado vía Supabase Auth
     </footer>
@@ -857,6 +1102,70 @@ const sinServiciosAprovisionados = sinServiciosActivos;
         }
       });
     });
+
+    const formFiscales = document.getElementById('formDatosFiscales') as HTMLFormElement | null;
+    const btnGuardarFiscales = document.getElementById('btnGuardarFiscales') as HTMLButtonElement | null;
+    const fiscalFeedback = document.getElementById('fiscalFeedback') as HTMLDivElement | null;
+    const fiscalStatusPill = document.getElementById('fiscalStatusPill') as HTMLSpanElement | null;
+    const fiscalPendingAlert = document.getElementById('fiscalPendingAlert') as HTMLDivElement | null;
+
+    if (formFiscales) {
+      formFiscales.addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        if (btnGuardarFiscales) btnGuardarFiscales.disabled = true;
+        if (fiscalFeedback) {
+          fiscalFeedback.className = 'fiscal-feedback';
+          fiscalFeedback.textContent = '';
+        }
+
+        const fd = new FormData(formFiscales);
+        const payload = {
+          rfc: String(fd.get('rfc') || '').trim().toUpperCase(),
+          razon_social: String(fd.get('razon_social') || '').trim(),
+          nombre_comercial: String(fd.get('nombre_comercial') || '').trim(),
+          regimen_fiscal: String(fd.get('regimen_fiscal') || '').trim(),
+          codigo_postal: String(fd.get('codigo_postal') || '').trim(),
+          uso_cfdi_sat: String(fd.get('uso_cfdi_sat') || '').trim().toUpperCase(),
+          correo_facturacion: String(fd.get('correo_facturacion') || '').trim()
+        };
+
+        try {
+          const res = await fetch('/api/cuenta/datos-fiscales', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          const data = await res.json().catch(() => ({}));
+
+          if (!res.ok || !data.ok) {
+            if (fiscalFeedback) {
+              fiscalFeedback.className = 'fiscal-feedback err';
+              fiscalFeedback.textContent = data.error || `Error guardando datos fiscales (HTTP ${res.status})`;
+            }
+            return;
+          }
+
+          if (fiscalFeedback) {
+            fiscalFeedback.className = 'fiscal-feedback ok';
+            fiscalFeedback.textContent = 'Datos fiscales guardados y verificados correctamente.';
+          }
+          if (fiscalStatusPill) {
+            fiscalStatusPill.className = 'pill pill-online';
+            fiscalStatusPill.textContent = 'Verificado';
+          }
+          if (fiscalPendingAlert) {
+            fiscalPendingAlert.style.display = 'none';
+          }
+        } catch (err: any) {
+          if (fiscalFeedback) {
+            fiscalFeedback.className = 'fiscal-feedback err';
+            fiscalFeedback.textContent = `Error de conexión: ${err?.message || 'Fallo de red'}`;
+          }
+        } finally {
+          if (btnGuardarFiscales) btnGuardarFiscales.disabled = false;
+        }
+      });
+    }
   </script>
 </body>
 </html>
