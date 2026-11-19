@@ -48,6 +48,42 @@ export function usaRfcGenerico(ficha: DatosFiscalesFicha | null): boolean {
   return rfc === 'XAXX010101000' || rfc === 'XEXX010101000';
 }
 
+/**
+ * Resuelve el servidor real del cliente consultando GET /v1/cliente/saldo en la puerta del motor (P1-P3).
+ * Solo cae a TELVY_DEFAULT_SERVIDOR como último recurso si el motor no responde o no trae el campo.
+ */
+export async function resolverServidorClienteMotor(
+  cliente: string,
+  opts?: {
+    gateUrl?: string;
+    internalKey?: string;
+    fetcher?: typeof fetch;
+  }
+): Promise<string> {
+  const fallback = (process.env.TELVY_DEFAULT_SERVIDOR || TELVY_DEFAULT_SERVIDOR).trim();
+  const gateUrl = (opts?.gateUrl || process.env.TELVY_GATE_URL || 'http://host.docker.internal:4100').replace(/\/$/, '');
+  const internalKey = (opts?.internalKey ?? process.env.CLIENT_API_INTERNAL_KEY ?? '').trim();
+  const doFetch = opts?.fetcher || fetch;
+
+  if (!cliente || !internalKey) return fallback;
+
+  try {
+    const res = await doFetch(`${gateUrl}/v1/cliente/saldo`, {
+      method: 'GET',
+      headers: {
+        'X-Internal-Key': internalKey,
+        'X-Authenticated-Client': cliente
+      }
+    });
+    if (!res.ok) return fallback;
+    const data = await res.json().catch(() => ({}));
+    const servidor = typeof data?.servidor === 'string' ? data.servidor.trim() : '';
+    return servidor || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 function getSentinelConfig(opts?: SentinelClientOptions) {
   const baseUrl = (
     opts?.sentinelUrl ||

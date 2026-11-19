@@ -1,7 +1,8 @@
 import type { APIRoute } from 'astro';
 import {
   guardarDatosFiscalesSentinel,
-  obtenerDatosFiscalesSentinel
+  obtenerDatosFiscalesSentinel,
+  resolverServidorClienteMotor
 } from '../../../lib/sentinel_fiscales.ts';
 
 export const GET: APIRoute = async ({ locals }) => {
@@ -15,11 +16,13 @@ export const GET: APIRoute = async ({ locals }) => {
     );
   }
 
+  const servidor = await resolverServidorClienteMotor(cliente);
   const res = await obtenerDatosFiscalesSentinel({
+    servidor,
     cliente_username: cliente
   });
 
-  return new Response(JSON.stringify(res.ok ? { ok: true, cliente: res.cliente } : { ok: false, error: res.error }), {
+  return new Response(JSON.stringify(res.ok ? { ok: true, cliente: res.cliente, revision_fiscal: res.revision_fiscal ?? null } : { ok: false, error: res.error }), {
     status: res.status,
     headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
   });
@@ -46,8 +49,10 @@ export const POST: APIRoute = async ({ request, locals }) => {
     );
   }
 
-  // Identidad tomada EXCLUSIVAMENTE de la sesión autenticada (nunca del navegador)
+  // Identidad y servidor tomados EXCLUSIVAMENTE de la sesión autenticada y del motor (P2, P3)
+  const servidor = await resolverServidorClienteMotor(cliente);
   const res = await guardarDatosFiscalesSentinel({
+    servidor,
     cliente_username: cliente,
     rfc: String(body.rfc ?? ''),
     razon_social: String(body.razon_social ?? ''),

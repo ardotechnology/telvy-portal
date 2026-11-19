@@ -899,8 +899,9 @@ const fiscalGenerico = usaRfcGenerico(datosFiscales);
 
       {!revisionFiscal?.pendiente && !fiscalPendiente && fiscalGenerico && (
         <div class="fiscal-alert" id="fiscalInvitacionAlert">
-          <strong>Facturación a Público en General:</strong> tus facturas se emiten con RFC genérico.
-          Si deseas recibir facturas fiscales a tu nombre o razón social, puedes completar tus datos fiscales aquí en cualquier momento.
+          <strong>Facturación a Público en General:</strong> mientras factures con RFC genérico, tu CFDI llevará
+          receptor <strong>PUBLICO EN GENERAL</strong>, régimen fiscal <strong>616</strong> y el <strong>domicilio fiscal del emisor</strong>;
+          los campos que captures aquí se usarán cuando registres tu RFC real.
         </div>
       )}
 

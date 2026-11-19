@@ -6,6 +6,7 @@ import {
   esFichaFiscalPendiente,
   guardarDatosFiscalesSentinel,
   obtenerDatosFiscalesSentinel,
+  resolverServidorClienteMotor,
   usaRfcGenerico
 } from '../app/src/lib/sentinel_fiscales.ts';
 import { GET, POST } from '../app/src/pages/api/cuenta/datos-fiscales.ts';
@@ -230,8 +231,24 @@ async function main() {
     const indexSrc = fs.readFileSync(path.join(process.cwd(), 'app/src/pages/index.astro'), 'utf8');
     assert.match(indexSrc, /seccion-datos-fiscales/);
     assert.match(indexSrc, /Facturación a Público en General/i);
+    assert.match(indexSrc, /PUBLICO EN GENERAL/);
+    assert.match(indexSrc, /616/);
+    assert.match(indexSrc, /domicilio fiscal del emisor/i);
     assert.equal(indexSrc.includes('sin datos fiscales verificados no se puede emitir factura'), false, 'N7: ya no debe mostrar mensaje de bloqueo');
     assert.equal(indexSrc.includes('SENTINEL_INTEGRACION_KEY'), false, 'L5: index.astro no debe referenciar la clave');
+
+    // P2 & P3: cliente de MB-Core usa servidor devuelto por el motor (no el default MB-Edge-MTY)
+    const servidorCore = await resolverServidorClienteMotor('73941', {
+      gateUrl: 'http://motor.test:4100',
+      internalKey: 'k-test',
+      fetcher: (async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true, cliente: '73941', servidor: 'MB-Core', saldo: { disponible: 50, reservado: 0 }, moneda: 'MXN' })
+      })) as any
+    });
+    console.log('P2_P3_SERVIDOR_CORE:', JSON.stringify({ cliente: '73941', servidorResuelto: servidorCore }));
+    assert.equal(servidorCore, 'MB-Core');
 
     const clientFiles = walkDir(path.join(process.cwd(), 'app/dist/client'));
     const leaks = clientFiles.filter((f) => {
