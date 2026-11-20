@@ -660,6 +660,7 @@ const fiscalGenerico = usaRfcGenerico(datosFiscales);
                 <th>Caller ID</th>
                 <th>Línea / Registro</th>
                 <th>Estado</th>
+                <th>Contraseña SIP</th>
               </tr>
             </thead>
             <tbody>
@@ -681,10 +682,71 @@ const fiscalGenerico = usaRfcGenerico(datosFiscales);
                     })()}
                   </td>
                   <td>{ext.activo ? 'Habilitada' : 'Inactiva'}</td>
+                  <td>
+                    <button
+                      type="button"
+                      class="btn-revelar-pass-ext"
+                      data-ext={ext.name}
+                      style="font-size: 12px; font-weight: 600; padding: 6px 10px; background: var(--color-ink); color: #ffffff; border: none; border-radius: 6px; cursor: pointer; white-space: nowrap;"
+                    >
+                      Obtener contraseña
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
+        <div
+          id="panelExtPasswordInicio"
+          style="display: none; margin-top: 16px; padding: 16px; border: 1px solid #bae6fd; background: #f0f9ff; border-radius: 10px;"
+        >
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap;">
+            <div>
+              <strong style="font-size: 14px; color: #0c4a6e;">
+                Contraseña de extensión <span id="inicioExtTarget" style="font-family: monospace;">-</span>
+              </strong>
+              <p style="font-size: 12px; color: #334155; margin-top: 4px; line-height: 1.5;">
+                Por seguridad las contraseñas SIP no se guardan en texto plano. Al pedirla se genera una contraseña nueva en este momento y se muestra <strong>una sola vez</strong>: anótala o cámbiala si la pierdes.
+              </p>
+            </div>
+            <button
+              type="button"
+              id="btnCerrarPanelExtPass"
+              style="font-size: 12px; padding: 5px 10px; border: 1px solid #cbd5e1; background: #ffffff; border-radius: 6px; cursor: pointer;"
+            >
+              Cerrar
+            </button>
+          </div>
+          <div id="inicioExtPassConfirm" style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+            <button
+              type="button"
+              id="btnConfirmarGenerarExtPass"
+              style="font-size: 13px; font-weight: 600; padding: 8px 14px; background: #0c0a08; color: #ffffff; border: none; border-radius: 6px; cursor: pointer;"
+            >
+              Generar y mostrar contraseña ahora
+            </button>
+            <span style="font-size: 12px; color: #64748b;">
+              Tu teléfono o softphone usará esta contraseña nueva.
+            </span>
+          </div>
+          <div id="inicioExtPassEstado" style="display: none; margin-top: 12px; font-size: 13px; color: #0369a1; font-weight: 600;"></div>
+          <div id="inicioExtPassResultado" style="display: none; margin-top: 12px; padding: 12px; background: #ffffff; border: 1px solid #7dd3fc; border-radius: 8px;">
+            <div style="font-size: 12px; font-weight: 600; color: #0369a1;">Contraseña generada (se muestra UNA sola vez):</div>
+            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 6px;">
+              <code id="inicioExtPassValor" style="font-size: 18px; font-weight: 700; letter-spacing: 0.04em; color: #0c0a08; user-select: all;">-</code>
+              <button
+                type="button"
+                id="btnCopiarInicioExtPass"
+                style="font-size: 12px; font-weight: 600; padding: 6px 10px; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 6px; cursor: pointer;"
+              >
+                Copiar
+              </button>
+            </div>
+            <p style="font-size: 12px; color: #991b1b; margin-top: 8px; font-weight: 600;">
+              Anótala ahora. Al cerrar este aviso no se volverá a mostrar; si la necesitas después, deberás generar una nueva.
+            </p>
+          </div>
         </div>
       ) : (
         <div class="empty-state">
@@ -839,6 +901,15 @@ const fiscalGenerico = usaRfcGenerico(datosFiscales);
                         Contraseña: <strong>{av.password}</strong>
                       </div>
                     )}
+                    {Array.isArray(av.extensiones) && av.extensiones.some((e: any) => e && e.password) && (
+                      <div style="margin-top:0.35rem; display:flex; flex-direction:column; gap:0.25rem;">
+                        {av.extensiones.filter((e: any) => e && e.password).map((e: any) => (
+                          <div style="font-family:monospace; font-size:0.8rem; background:#f1f5f9; padding:0.25rem 0.5rem; border-radius:4px; display:inline-block;">
+                            Extensión <strong>{e.extension}</strong> · Contraseña: <strong>{e.password}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </td>
                   <td>{av.created_at ? new Date(av.created_at).toLocaleString('es-MX') : '-'}</td>
                   <td>
@@ -849,7 +920,7 @@ const fiscalGenerico = usaRfcGenerico(datosFiscales);
                     )}
                   </td>
                   <td>
-                    {av.tipo_aviso === 'reactivacion_password' && av.estado === 'pendiente' ? (
+                    {(av.tipo_aviso === 'reactivacion_password' || av.tipo_aviso === 'alta_cuenta_password') && av.estado === 'pendiente' ? (
                       <button 
                         class="btn btn-primary btn-sm btn-confirmar-aviso" 
                         data-aviso-id={av.id}
@@ -1187,6 +1258,137 @@ const fiscalGenerico = usaRfcGenerico(datosFiscales);
         }
       });
     }
+
+    // BA1-BA2: Solicitar y ver contraseña de extensión desde el panel principal (una sola vez)
+    (() => {
+      const panel = document.getElementById('panelExtPasswordInicio') as HTMLElement | null;
+      const targetEl = document.getElementById('inicioExtTarget') as HTMLElement | null;
+      const confirmWrap = document.getElementById('inicioExtPassConfirm') as HTMLElement | null;
+      const btnConfirmar = document.getElementById('btnConfirmarGenerarExtPass') as HTMLButtonElement | null;
+      const btnCerrar = document.getElementById('btnCerrarPanelExtPass') as HTMLButtonElement | null;
+      const estadoEl = document.getElementById('inicioExtPassEstado') as HTMLElement | null;
+      const resultadoEl = document.getElementById('inicioExtPassResultado') as HTMLElement | null;
+      const valorEl = document.getElementById('inicioExtPassValor') as HTMLElement | null;
+      const btnCopiar = document.getElementById('btnCopiarInicioExtPass') as HTMLButtonElement | null;
+
+      if (!panel || !targetEl || !confirmWrap || !btnConfirmar || !btnCerrar || !estadoEl || !resultadoEl || !valorEl || !btnCopiar) {
+        return;
+      }
+
+      let activeExt = '';
+      let activeTimer: ReturnType<typeof setInterval> | null = null;
+
+      function limpiarPanel() {
+        if (activeTimer) {
+          clearInterval(activeTimer);
+          activeTimer = null;
+        }
+        valorEl!.textContent = '-';
+        resultadoEl!.style.display = 'none';
+        estadoEl!.style.display = 'none';
+        estadoEl!.textContent = '';
+        confirmWrap!.style.display = 'flex';
+        btnConfirmar!.disabled = false;
+        btnCopiar!.textContent = 'Copiar';
+      }
+
+      document.querySelectorAll('.btn-revelar-pass-ext').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          limpiarPanel();
+          activeExt = (btn as HTMLElement).dataset.ext || '';
+          targetEl.textContent = activeExt || '-';
+          panel.style.display = 'block';
+          panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        });
+      });
+
+      btnCerrar.addEventListener('click', () => {
+        limpiarPanel();
+        activeExt = '';
+        panel.style.display = 'none';
+      });
+
+      btnCopiar.addEventListener('click', async () => {
+        const val = valorEl.textContent || '';
+        if (!val || val === '-') return;
+        try {
+          await navigator.clipboard.writeText(val);
+          btnCopiar.textContent = 'Copiado';
+        } catch {
+          btnCopiar.textContent = 'Selecciona y copia';
+        }
+      });
+
+      btnConfirmar.addEventListener('click', async () => {
+        if (!activeExt) return;
+        btnConfirmar.disabled = true;
+        confirmWrap.style.display = 'none';
+        resultadoEl.style.display = 'none';
+        estadoEl.style.display = 'block';
+        estadoEl.style.color = '#0369a1';
+        estadoEl.textContent = 'Generando nueva contraseña en el conmutador...';
+
+        try {
+          const res = await fetch('/api/cuenta/extensiones/password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ extension: activeExt, generar: true })
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data.orden_id || !data.password) {
+            estadoEl.style.color = '#991b1b';
+            estadoEl.textContent = data.error || 'No se pudo generar la contraseña.';
+            confirmWrap.style.display = 'flex';
+            btnConfirmar.disabled = false;
+            return;
+          }
+
+          const ordenId = data.orden_id;
+          const passwordGenerada = String(data.password);
+          let intentos = 0;
+
+          activeTimer = setInterval(async () => {
+            intentos++;
+            try {
+              const chk = await fetch(`/api/cuenta/orden-status?orden_id=${encodeURIComponent(ordenId)}`);
+              const chkData = await chk.json().catch(() => ({}));
+              if (chkData.estado === 'completado') {
+                if (activeTimer) clearInterval(activeTimer);
+                activeTimer = null;
+                estadoEl.style.display = 'none';
+                valorEl.textContent = passwordGenerada;
+                resultadoEl.style.display = 'block';
+                return;
+              }
+              if (chkData.estado === 'fallido' || chkData.estado === 'compensado' || chkData.terminal) {
+                if (activeTimer) clearInterval(activeTimer);
+                activeTimer = null;
+                estadoEl.style.color = '#991b1b';
+                estadoEl.textContent = 'No se pudo aplicar la contraseña en el conmutador. Intenta nuevamente.';
+                confirmWrap.style.display = 'flex';
+                btnConfirmar.disabled = false;
+                return;
+              }
+              if (intentos >= 20) {
+                if (activeTimer) clearInterval(activeTimer);
+                activeTimer = null;
+                estadoEl.style.color = '#92400e';
+                estadoEl.textContent = `La solicitud (${ordenId}) sigue en proceso. Revisa en unos segundos.`;
+                confirmWrap.style.display = 'flex';
+                btnConfirmar.disabled = false;
+              }
+            } catch {
+              // Ignorar errores transitorios
+            }
+          }, 1500);
+        } catch {
+          estadoEl.style.color = '#991b1b';
+          estadoEl.textContent = 'Error de conexión al generar la contraseña.';
+          confirmWrap.style.display = 'flex';
+          btnConfirmar.disabled = false;
+        }
+      });
+    })();
   </script>
 </body>
 </html>

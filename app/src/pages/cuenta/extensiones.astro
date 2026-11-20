@@ -403,12 +403,20 @@ try {
                     })()}
                   </td>
                   <td>
-                    <button
-                      class="btn-action btn-open-modal"
-                      data-ext={ext.name}
-                    >
-                      Cambiar contraseña
-                    </button>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                      <button
+                        class="btn-action btn-quick-generate"
+                        data-ext={ext.name}
+                      >
+                        Ver nueva contraseña
+                      </button>
+                      <button
+                        class="btn-secondary btn-open-modal"
+                        data-ext={ext.name}
+                      >
+                        Cambiar manualmente
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -484,9 +492,14 @@ try {
           <div class="password-display-card">
             <div style="font-size: 13px; font-weight: 600; color: #0369a1;">Tu nueva contraseña es:</div>
             <div id="displayPassword" class="password-value">-</div>
-            <p style="font-size: 12px; color: var(--color-ash); margin-top: 6px;">
-              <strong>Cópiala ahora. No se puede volver a mostrar.</strong><br />
-              Úsala para reconfigurar tu softphone.
+            <div style="margin-top: 8px;">
+              <button id="btnCopyPassword" type="button" class="btn-secondary" style="font-size: 12px; padding: 6px 12px;">
+                Copiar contraseña
+              </button>
+            </div>
+            <p style="font-size: 12px; color: var(--color-ash); margin-top: 8px;">
+              <strong>Se muestra una sola vez. Anótala ahora; no se volverá a mostrar.</strong><br />
+              Si la pierdes, puedes generar una nueva en cualquier momento.
             </p>
           </div>
           <div style="text-align: right; margin-top: 16px;">
@@ -513,6 +526,7 @@ try {
     const successCard = document.getElementById('successCard') as HTMLElement | null;
     const displayPassword = document.getElementById('displayPassword') as HTMLElement | null;
     const btnCloseSuccess = document.getElementById('btnCloseSuccess') as HTMLButtonElement | null;
+    const btnCopyPassword = document.getElementById('btnCopyPassword') as HTMLButtonElement | null;
 
     if (
       !modal || !modalExtName || !formSection || !inputPassword || !btnGenerate ||
@@ -710,6 +724,85 @@ try {
         statusBox.textContent = 'Error de conexión al enviar la solicitud.';
       }
     });
+
+    // BA1, BA2, BA4: Botón directo "Ver nueva contraseña" que genera una nueva en el servidor y la muestra una sola vez
+    document.querySelectorAll('.btn-quick-generate').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const el = e.currentTarget as HTMLElement;
+        targetExtension = el.dataset.ext || '';
+        modalExtName.textContent = targetExtension;
+        pwdError.style.display = 'none';
+        successCard.style.display = 'none';
+        formSection.style.display = 'none';
+        statusBox.className = 'status-area loading';
+        statusBox.style.display = 'block';
+        statusBox.textContent = 'Generando nueva contraseña segura en el conmutador...';
+        modal.style.display = 'flex';
+
+        try {
+          const res = await fetch('/api/cuenta/extensiones/password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ extension: targetExtension, generar: true })
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data.orden_id || !data.password) {
+            statusBox.className = 'status-area error';
+            statusBox.textContent = data.error || 'No se pudo generar la contraseña.';
+            return;
+          }
+          const ordenId = data.orden_id;
+          const passwordRevelar = String(data.password);
+          statusBox.innerHTML = `Aplicando contraseña en el conmutador (Orden: <code>${ordenId}</code>)...`;
+
+          let intentos = 0;
+          const interval = setInterval(async () => {
+            intentos++;
+            try {
+              const checkRes = await fetch(`/api/cuenta/orden-status?orden_id=${encodeURIComponent(ordenId)}`);
+              const checkData = await checkRes.json().catch(() => ({}));
+              if (checkData.estado === 'completado') {
+                clearInterval(interval);
+                statusBox.style.display = 'none';
+                displayPassword.textContent = passwordRevelar;
+                if (btnCopyPassword) btnCopyPassword.textContent = 'Copiar contraseña';
+                successCard.style.display = 'block';
+                return;
+              }
+              if (checkData.estado === 'fallido' || checkData.estado === 'compensado' || checkData.terminal) {
+                clearInterval(interval);
+                statusBox.className = 'status-area error';
+                statusBox.textContent = 'No se pudo aplicar la contraseña. La anterior sigue funcionando.';
+                return;
+              }
+              if (intentos >= 20) {
+                clearInterval(interval);
+                statusBox.className = 'status-area loading';
+                statusBox.textContent = `La orden ${ordenId} sigue en proceso. Recarga en unos segundos.`;
+              }
+            } catch {
+              // Ignorar errores transitorios
+            }
+          }, 1500);
+        } catch {
+          statusBox.className = 'status-area error';
+          statusBox.textContent = 'Error de conexión al generar la contraseña.';
+        }
+      });
+    });
+
+    if (btnCopyPassword) {
+      btnCopyPassword.addEventListener('click', async () => {
+        const val = displayPassword.textContent || '';
+        if (!val || val === '-') return;
+        try {
+          await navigator.clipboard.writeText(val);
+          btnCopyPassword.textContent = 'Copiado';
+        } catch {
+          btnCopyPassword.textContent = 'Selecciona y copia';
+        }
+      });
+    }
     })();
   </script>
 </body>

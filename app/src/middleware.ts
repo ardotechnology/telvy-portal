@@ -33,6 +33,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
   const isPublicRoute =
     pathname === '/login' ||
     pathname === '/recuperar' ||
+    pathname === '/restablecer' ||
     pathname === '/cuenta-no-vinculada' ||
     pathname === '/paquetes' ||
     pathname === '/alta-confirmada' ||

@@ -287,6 +287,15 @@ try {
                         Contraseña: <strong>{av.password}</strong>
                       </div>
                     )}
+                    {Array.isArray(av.extensiones) && av.extensiones.some((e: any) => e && e.password) && (
+                      <div style="margin-top: 6px; display: flex; flex-direction: column; gap: 4px;">
+                        {av.extensiones.filter((e: any) => e && e.password).map((e: any) => (
+                          <div class="secret-box">
+                            Extensión <strong>{e.extension}</strong> · Contraseña: <strong>{e.password}</strong>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </td>
                   <td>{av.created_at ? new Date(av.created_at).toLocaleString('es-MX') : '-'}</td>
                   <td>
@@ -297,7 +306,7 @@ try {
                     )}
                   </td>
                   <td>
-                    {av.tipo_aviso === 'reactivacion_password' && av.estado === 'pendiente' ? (
+                    {(av.tipo_aviso === 'reactivacion_password' || av.tipo_aviso === 'alta_cuenta_password') && av.estado === 'pendiente' ? (
                       <button 
                         class="btn btn-primary btn-confirmar-aviso" 
                         data-aviso-id={av.id}

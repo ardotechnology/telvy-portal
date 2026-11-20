@@ -1,4 +1,6 @@
 ---
+import { getPortalRecoveryRedirectUrl } from '../lib/supabase_admin';
+
 let submitted = false;
 
 if (Astro.request.method === 'POST') {
@@ -8,7 +10,7 @@ if (Astro.request.method === 'POST') {
 
     if (email) {
       await Astro.locals.supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${Astro.url.origin}/login`
+        redirectTo: getPortalRecoveryRedirectUrl(Astro.url.origin)
       });
     }
   } catch {

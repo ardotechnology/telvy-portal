@@ -1,0 +1,318 @@
+---
+import { verifySupabaseEmailToken } from '../lib/supabase_admin';
+
+let errorMessage = '';
+let sessionReady = false;
+let tokenError = '';
+
+const supabase = Astro.locals.supabase;
+
+if (Astro.request.method === 'POST') {
+  const contentType = Astro.request.headers.get('content-type') || '';
+
+  // Puente para enlaces con fragmento implícito (#access_token=...&refresh_token=...)
+  if (contentType.includes('application/json')) {
+    try {
+      const body = (await Astro.request.json()) as {
+        intent?: string;
+        access_token?: string;
+        refresh_token?: string;
+      };
+      if (body?.intent === 'set_hash_session' && body.access_token && body.refresh_token) {
+        const verified = await verifySupabaseEmailToken({
+          access_token: body.access_token,
+          refresh_token: body.refresh_token,
+          supabaseClient: supabase
+        });
+        if (!verified.ok) {
+          return new Response(
+            JSON.stringify({ ok: false, error: 'El enlace de recuperación es inválido o expiró.' }),
+            { status: 400, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+    } catch {
+      return new Response(JSON.stringify({ ok: false, error: 'Solicitud inválida' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+  }
+
+  // Envío del formulario de nueva contraseña (AZ2)
+  try {
+    const formData = await Astro.request.formData();
+    const password = String(formData.get('password') || '');
+    const confirmPassword = String(formData.get('confirm_password') || '');
+
+    const {
+      data: { user }
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      tokenError = 'Tu sesión de recuperación expiró. Solicita un nuevo enlace.';
+    } else if (password.length < 8) {
+      sessionReady = true;
+      errorMessage = 'La nueva contraseña debe tener al menos 8 caracteres.';
+    } else if (password !== confirmPassword) {
+      sessionReady = true;
+      errorMessage = 'Las contraseñas no coinciden.';
+    } else {
+      const { error: updErr } = await supabase.auth.updateUser({ password });
+      if (updErr) {
+        sessionReady = true;
+        errorMessage = updErr.message || 'No se pudo actualizar la contraseña.';
+      } else {
+        // AZ2: la sesión ya está activa en cookies SSR; entrar directo al portal sin pasar por /login
+        return Astro.redirect('/');
+      }
+    }
+  } catch {
+    sessionReady = true;
+    errorMessage = 'Ocurrió un error al actualizar la contraseña. Intenta nuevamente.';
+  }
+} else {
+  // GET /restablecer: reutiliza verifySupabaseEmailToken para PKCE (?code=) u OTP (?token_hash=&type=recovery) (AZ1)
+  const code = Astro.url.searchParams.get('code')?.trim() || '';
+  const tokenHash = Astro.url.searchParams.get('token_hash')?.trim() || '';
+  const otpType = Astro.url.searchParams.get('type')?.trim() || 'recovery';
+  const urlErrDesc = Astro.url.searchParams.get('error_description')?.trim() || '';
+
+  if (urlErrDesc) {
+    tokenError = urlErrDesc;
+  } else if (code || tokenHash) {
+    const verified = await verifySupabaseEmailToken({
+      ...(code ? { code } : {}),
+      ...(tokenHash ? { token_hash: tokenHash, type: otpType } : {}),
+      supabaseClient: supabase
+    });
+    if (!verified.ok) {
+      tokenError = 'El enlace de recuperación es inválido o ya expiró. Solicita uno nuevo.';
+    } else {
+      sessionReady = true;
+    }
+  } else {
+    const {
+      data: { user }
+    } = await supabase.auth.getUser();
+    if (user) {
+      sessionReady = true;
+    }
+  }
+}
+---
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nueva Contraseña — Portal de Cliente Telvy</title>
+  <style>
+    :root {
+      --color-ink: #0c0a08;
+      --color-paper: #ffffff;
+      --color-bone: #f4f2f0;
+      --color-ash: #6d6c6b;
+      --color-hairline: #e5e7eb;
+      --color-smoke: #d3d3d3;
+      --radius-card: 14px;
+      --radius-sm: 6px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background-color: var(--color-bone);
+      color: var(--color-ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 24px;
+    }
+
+    .container { width: 100%; max-width: 440px; }
+    .brand-header { text-align: center; margin-bottom: 24px; }
+    .brand-title { font-size: 28px; font-weight: 700; letter-spacing: -0.03em; color: var(--color-ink); }
+    .brand-subtitle { font-size: 14px; color: var(--color-ash); margin-top: 4px; }
+
+    .card {
+      background-color: var(--color-paper);
+      border: 1px solid var(--color-hairline);
+      border-radius: var(--radius-card);
+      padding: 32px 28px;
+    }
+
+    .form-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; }
+    label {
+      font-size: 12px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.05em; color: var(--color-ash);
+    }
+
+    input[type="password"] {
+      width: 100%; padding: 12px 14px; border: 1px solid var(--color-smoke);
+      border-radius: var(--radius-sm); font-size: 15px; color: var(--color-ink);
+      background-color: var(--color-paper); outline: none; transition: border-color 0.15s;
+    }
+    input[type="password"]:focus { border-color: var(--color-ink); }
+
+    .btn-submit {
+      width: 100%; padding: 13px; background-color: var(--color-ink); color: #ffffff;
+      border: none; border-radius: var(--radius-sm); font-size: 14px; font-weight: 600;
+      cursor: pointer; margin-top: 8px;
+    }
+    .btn-submit:hover { background-color: #262626; }
+
+    .alert-error {
+      background-color: #fef2f2; border: 1px solid #fecaca; color: #991b1b;
+      padding: 14px 16px; border-radius: var(--radius-sm); font-size: 14px;
+      line-height: 1.5; margin-bottom: 18px;
+    }
+
+    .card-footer { margin-top: 20px; display: flex; justify-content: center; font-size: 13px; }
+    .card-footer a { color: var(--color-ash); text-decoration: underline; }
+    .card-footer a:hover { color: var(--color-ink); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="brand-header">
+      <h1 class="brand-title">Nueva contraseña</h1>
+      <p class="brand-subtitle">Portal de Cliente Telvy</p>
+    </div>
+
+    <div class="card">
+      {tokenError && (
+        <div>
+          <div class="alert-error">{tokenError}</div>
+          <div class="card-footer">
+            <a href="/recuperar">Solicitar un nuevo enlace de recuperación</a>
+          </div>
+        </div>
+      )}
+
+      {!tokenError && (
+        <>
+          <div id="hashChecking" style={sessionReady ? 'display:none;' : 'font-size:14px; color:#6d6c6b; text-align:center;'}>
+            Verificando enlace de recuperación...
+          </div>
+
+          <div id="hashInvalid" style="display:none;">
+            <div class="alert-error" id="hashInvalidMsg">
+              El enlace de recuperación es inválido o ya expiró. Solicita uno nuevo.
+            </div>
+            <div class="card-footer">
+              <a href="/recuperar">Solicitar un nuevo enlace de recuperación</a>
+            </div>
+          </div>
+
+          <form
+            id="resetPasswordForm"
+            method="POST"
+            action="/restablecer"
+            style={sessionReady ? '' : 'display:none;'}
+          >
+            {errorMessage && <div class="alert-error">{errorMessage}</div>}
+
+            <p style="font-size: 14px; color: var(--color-ash); margin-bottom: 18px;">
+              Define tu nueva contraseña para ingresar de inmediato a tu portal.
+            </p>
+
+            <div class="form-group">
+              <label for="password">Nueva contraseña</label>
+              <input
+                type="password"
+                id="password"
+                name="password"
+                minlength="8"
+                required
+                autocomplete="new-password"
+                placeholder="Mínimo 8 caracteres"
+              />
+            </div>
+
+            <div class="form-group">
+              <label for="confirm_password">Confirmar contraseña</label>
+              <input
+                type="password"
+                id="confirm_password"
+                name="confirm_password"
+                minlength="8"
+                required
+                autocomplete="new-password"
+                placeholder="Repite tu nueva contraseña"
+              />
+            </div>
+
+            <button type="submit" class="btn-submit">
+              Guardar contraseña y entrar al portal
+            </button>
+          </form>
+        </>
+      )}
+    </div>
+  </div>
+
+  {!sessionReady && !tokenError && (
+    <script>
+      (async () => {
+        const checkingEl = document.getElementById('hashChecking');
+        const invalidEl = document.getElementById('hashInvalid');
+        const invalidMsgEl = document.getElementById('hashInvalidMsg');
+        const formEl = document.getElementById('resetPasswordForm');
+
+        const hash = window.location.hash ? window.location.hash.slice(1) : '';
+        const params = new URLSearchParams(hash);
+        const accessToken = params.get('access_token');
+        const refreshToken = params.get('refresh_token');
+        const hashError = params.get('error_description');
+
+        if (hashError) {
+          if (checkingEl) checkingEl.style.display = 'none';
+          if (invalidMsgEl) invalidMsgEl.textContent = hashError;
+          if (invalidEl) invalidEl.style.display = 'block';
+          return;
+        }
+
+        if (!accessToken || !refreshToken) {
+          if (checkingEl) checkingEl.style.display = 'none';
+          if (invalidEl) invalidEl.style.display = 'block';
+          return;
+        }
+
+        try {
+          const res = await fetch('/restablecer', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              intent: 'set_hash_session',
+              access_token: accessToken,
+              refresh_token: refreshToken
+            })
+          });
+          const data = await res.json().catch(() => ({ ok: false }));
+          if (res.ok && data.ok) {
+            window.history.replaceState(null, '', '/restablecer');
+            if (checkingEl) checkingEl.style.display = 'none';
+            if (formEl) formEl.style.display = 'block';
+          } else {
+            if (checkingEl) checkingEl.style.display = 'none';
+            if (invalidMsgEl && data.error) invalidMsgEl.textContent = data.error;
+            if (invalidEl) invalidEl.style.display = 'block';
+          }
+        } catch {
+          if (checkingEl) checkingEl.style.display = 'none';
+          if (invalidEl) invalidEl.style.display = 'block';
+        }
+      })();
+    </script>
+  )}
+</body>
+</html>

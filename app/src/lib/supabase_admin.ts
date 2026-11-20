@@ -5,6 +5,13 @@ export function getPortalConfirmRedirectUrl(): string {
   return `${base}/api/publico/alta/confirmar`;
 }
 
+export function getPortalRecoveryRedirectUrl(originFallback?: string): string {
+  const base = (process.env.PUBLIC_PORTAL_URL || originFallback || 'https://portal.telvy.net')
+    .trim()
+    .replace(/\/+$/, '');
+  return `${base}/restablecer`;
+}
+
 function getServiceClient(): SupabaseClient {
   const url = process.env.SUPABASE_URL || '';
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
@@ -167,11 +174,15 @@ export async function verifySupabaseEmailToken(params: {
   type?: string;
   code?: string;
   access_token?: string;
+  refresh_token?: string;
+  supabaseClient?: SupabaseClient;
 }): Promise<{ ok: boolean; status: number; userId?: string; email?: string; error?: string }> {
-  const supabase = getServiceClient();
+  const supabase = params.supabaseClient ?? getServiceClient();
 
   if (params.token_hash) {
-    const otpType = (params.type === 'email' ? 'email' : 'signup') as 'signup' | 'email';
+    const otpType = (
+      params.type === 'recovery' ? 'recovery' : params.type === 'email' ? 'email' : 'signup'
+    ) as 'signup' | 'email' | 'recovery';
     const { data, error } = await supabase.auth.verifyOtp({
       token_hash: params.token_hash,
       type: otpType
@@ -186,6 +197,17 @@ export async function verifySupabaseEmailToken(params: {
     const { data, error } = await supabase.auth.exchangeCodeForSession(params.code);
     if (error || !data?.user) {
       return { ok: false, status: 400, error: error?.message || 'Código de confirmación inválido o expirado' };
+    }
+    return { ok: true, status: 200, userId: data.user.id, email: data.user.email };
+  }
+
+  if (params.access_token && params.refresh_token) {
+    const { data, error } = await supabase.auth.setSession({
+      access_token: params.access_token,
+      refresh_token: params.refresh_token
+    });
+    if (error || !data?.user) {
+      return { ok: false, status: 400, error: error?.message || 'Token de acceso inválido o expirado' };
     }
     return { ok: true, status: 200, userId: data.user.id, email: data.user.email };
   }
