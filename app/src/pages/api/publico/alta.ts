@@ -88,6 +88,9 @@ export const POST: APIRoute = async (ctx) => {
         statusOut === 409
           ? 'Este correo ya tiene cuenta, inicia sesión'
           : (motorData.error || 'El motor no pudo procesar el registro');
+      console.warn(
+        `[portal/publico/alta] rechazado correo=${correo || '-'} motor_status=${motorRes.status} status_out=${statusOut} motor_error=${motorData.error || '-'}`
+      );
       return new Response(JSON.stringify({ ok: false, error: errorOut }), { status: statusOut, headers });
     }
 
