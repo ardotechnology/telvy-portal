@@ -15,8 +15,8 @@ export const OPTIONS: APIRoute = async ({ request }) => {
 };
 
 export const POST: APIRoute = async (ctx) => {
-  // AM1/AM3: cerrar cualquier sesión previa antes de iniciar un alta pública
-  await cerrarSesionPortal(ctx);
+  // AO1-AO3: cerrar sesión previa SOLO si pertenece a un cliente identificado; conservar sesión anónima del alta
+  await cerrarSesionPortal(ctx, { soloSiIdentificado: true });
   const headers = new Headers(buildCorsHeaders(ctx.request));
   const clientIp = getClientIp(ctx);
 
