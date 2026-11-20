@@ -1,9 +1,16 @@
 ---
+import { cerrarSesionPortal } from '../lib/session_cleanup';
+
+// AM1: defensa en profundidad — al aterrizar en /alta-confirmada nunca dejar sesión ajena abierta
+await cerrarSesionPortal(Astro);
+
 const estado = Astro.url.searchParams.get('estado') || 'error';
+const correo = (Astro.url.searchParams.get('correo') || '').trim();
 const motivo =
   Astro.url.searchParams.get('motivo') ||
   'El enlace de confirmación es inválido, ya fue usado o expiró.';
 const esExito = estado === 'ok';
+const loginHref = correo ? `/login?email=${encodeURIComponent(correo)}` : '/login';
 ---
 <!DOCTYPE html>
 <html lang="es">
@@ -37,7 +44,7 @@ const esExito = estado === 'ok';
             Tu cuenta quedó confirmada y estamos activando tu línea y número telefónico en segundo plano.
             Ya puedes iniciar sesión en tu portal.
           </p>
-          <a href="/login" class="btn">Ir a iniciar sesión</a>
+          <a href={loginHref} class="btn">Ir a iniciar sesión</a>
         </>
       ) : (
         <>

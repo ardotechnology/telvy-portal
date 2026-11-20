@@ -2,6 +2,7 @@
 import { checkRateLimit, recordFailedAttempt, resetRateLimit } from '../lib/rate_limiter';
 
 let errorMessage = '';
+const prefillEmail = (Astro.url.searchParams.get('email') || '').trim();
 const clientIp =
   Astro.clientAddress ||
   Astro.request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
@@ -226,6 +227,7 @@ if (Astro.request.method === 'POST') {
             type="email"
             id="email"
             name="email"
+            value={prefillEmail}
             placeholder="usuario@empresa.com"
             required
             autocomplete="email"

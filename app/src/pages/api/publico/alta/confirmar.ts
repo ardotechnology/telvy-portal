@@ -6,6 +6,7 @@ import {
   getClientIp
 } from '../../../../lib/public_did_proxy';
 import { verifySupabaseEmailToken } from '../../../../lib/supabase_admin';
+import { cerrarSesionPortal } from '../../../../lib/session_cleanup';
 
 export const OPTIONS: APIRoute = async ({ request }) => {
   return new Response(null, { status: 204, headers: buildCorsHeaders(request) });
@@ -17,9 +18,10 @@ function wantsHtmlRedirect(request: Request): boolean {
   return accept.includes('text/html') && !accept.includes('application/json');
 }
 
-function redirectConfirmacion(estado: 'ok' | 'error', motivo?: string): Response {
+function redirectConfirmacion(estado: 'ok' | 'error', motivo?: string, correo?: string | null): Response {
   const qs = new URLSearchParams({ estado });
   if (motivo) qs.set('motivo', motivo);
+  if (correo && correo.trim()) qs.set('correo', correo.trim().toLowerCase());
   return new Response(null, {
     status: 302,
     headers: {
@@ -33,6 +35,8 @@ async function handleConfirmacion(
   ctx: Parameters<APIRoute>[0],
   params: { token_hash?: string; type?: string; code?: string; access_token?: string }
 ): Promise<Response> {
+  // AM1: nunca dejar activa una sesión previa al confirmar un alta pública
+  await cerrarSesionPortal(ctx);
   const headers = new Headers(buildCorsHeaders(ctx.request));
   const clientIp = getClientIp(ctx);
   const isBrowser = wantsHtmlRedirect(ctx.request);
@@ -72,7 +76,7 @@ async function handleConfirmacion(
   const data = (await motorRes.json().catch(() => ({ ok: false, error: 'Respuesta inválida del motor' }))) as any;
   if (isBrowser) {
     return motorRes.ok && data.ok
-      ? redirectConfirmacion('ok')
+      ? redirectConfirmacion('ok', undefined, verified.email)
       : redirectConfirmacion('error', data.error || 'No se pudo confirmar tu alta.');
   }
 

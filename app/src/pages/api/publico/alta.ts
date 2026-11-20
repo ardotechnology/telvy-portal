@@ -8,12 +8,15 @@ import {
   getClientIp
 } from '../../../lib/public_did_proxy';
 import { createSupabaseUserWithConfirmation, getPortalConfirmRedirectUrl } from '../../../lib/supabase_admin';
+import { cerrarSesionPortal } from '../../../lib/session_cleanup';
 
 export const OPTIONS: APIRoute = async ({ request }) => {
   return new Response(null, { status: 204, headers: buildCorsHeaders(request) });
 };
 
 export const POST: APIRoute = async (ctx) => {
+  // AM1/AM3: cerrar cualquier sesión previa antes de iniciar un alta pública
+  await cerrarSesionPortal(ctx);
   const headers = new Headers(buildCorsHeaders(ctx.request));
   const clientIp = getClientIp(ctx);
 

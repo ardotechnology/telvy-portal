@@ -1,18 +1,8 @@
 import type { APIRoute } from 'astro';
+import { cerrarSesionPortal } from '../../../lib/session_cleanup';
 
-export const POST: APIRoute = async ({ locals, cookies, redirect }) => {
-  if (locals.supabase) {
-    try {
-      await locals.supabase.auth.signOut();
-    } catch {
-      // Fallback silencioso para proceder con la limpieza
-    }
-  }
-
-  // Borrar cookies de sesión del proyecto
-  cookies.delete('sb-access-token', { path: '/' });
-  cookies.delete('sb-refresh-token', { path: '/' });
-
+export const POST: APIRoute = async ({ request, locals, cookies, redirect }) => {
+  await cerrarSesionPortal({ request, cookies, locals });
   return redirect('/login', 302);
 };
 
