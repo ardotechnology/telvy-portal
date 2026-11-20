@@ -135,6 +135,9 @@ export const POST: APIRoute = async (ctx) => {
           errStatus === 409
             ? 'Este correo ya tiene cuenta, inicia sesión'
             : (supaRes.error || 'No se pudo enviar el correo de confirmación');
+        console.warn(
+          `[portal/publico/alta] supabase_auth_error correo=${correo || '-'} status=${errStatus} detalle=${supaRes.error || '-'}`
+        );
         return new Response(JSON.stringify({ ok: false, error: errMsg }), { status: errStatus, headers });
       }
     }
