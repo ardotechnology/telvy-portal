@@ -615,7 +615,7 @@ const fiscalGenerico = usaRfcGenerico(datosFiscales);
         tieneSaldoValido && saldoDisponible !== null ? (
           <div class="saldo-primary">
             <div class="saldo-label">Saldo</div>
-            <div class="saldo-value">{saldoDisponible.toFixed(2)} <span style="font-size: 18px; font-weight: 400; color: var(--color-ash);">{monedaSaldo}</span></div>
+            <div class="saldo-value" id="saldoValorActual">{saldoDisponible.toFixed(2)} <span style="font-size: 18px; font-weight: 400; color: var(--color-ash);">{monedaSaldo}</span></div>
             {saldoReservado > 0 && (
               <div style="font-size: 13px; color: var(--color-ash); margin-top: 6px;">
                 Tienes {saldoReservado.toFixed(2)} retenidos por una compra en curso
@@ -632,6 +632,35 @@ const fiscalGenerico = usaRfcGenerico(datosFiscales);
           No fue posible leer el saldo del cliente {cliente} ({errorSaldo || 'Error de lectura'}).
         </div>
       )}
+
+      <!-- CA1: Canje de tarjetas de prepago -->
+      <div style="margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--color-hairline);">
+        <div style="font-size: 14px; font-weight: 700; color: var(--color-ink); margin-bottom: 4px;">
+          Canjear tarjeta de prepago
+        </div>
+        <p style="font-size: 12px; color: var(--color-ash); margin-bottom: 10px;">
+          Ingresa el código de tu tarjeta (200, 300, 500 o 700 MXN) para abonar el saldo directo a tu monedero.
+        </p>
+        <form id="formCanjeVoucher" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+          <input
+            type="text"
+            id="inputVoucherCodigo"
+            name="codigo"
+            placeholder="Código de tarjeta"
+            autocomplete="off"
+            required
+            style="flex: 1; min-width: 180px; max-width: 280px; padding: 8px 12px; border: 1px solid var(--color-smoke); border-radius: 6px; font-size: 14px; font-family: monospace;"
+          />
+          <button
+            type="submit"
+            id="btnCanjearVoucher"
+            style="padding: 9px 16px; background: var(--color-ink); color: #ffffff; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer;"
+          >
+            Canjear tarjeta
+          </button>
+        </form>
+        <div id="voucherFeedback" style="display: none; margin-top: 10px; font-size: 13px; padding: 10px 12px; border-radius: 6px;"></div>
+      </div>
     </section>
 
     <!-- BLOQUE 2: Extensiones del Cliente -->
@@ -1258,6 +1287,69 @@ const fiscalGenerico = usaRfcGenerico(datosFiscales);
         }
       });
     }
+
+    // CA1: Canje de tarjeta prepago en el portal
+    (() => {
+      const form = document.getElementById('formCanjeVoucher') as HTMLFormElement | null;
+      const input = document.getElementById('inputVoucherCodigo') as HTMLInputElement | null;
+      const btn = document.getElementById('btnCanjearVoucher') as HTMLButtonElement | null;
+      const feedback = document.getElementById('voucherFeedback') as HTMLElement | null;
+      const saldoEl = document.getElementById('saldoValorActual') as HTMLElement | null;
+
+      if (!form || !input || !btn || !feedback) return;
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const codigo = input.value.trim();
+        if (!codigo) return;
+
+        btn.disabled = true;
+        btn.textContent = 'Canjeando...';
+        feedback.style.display = 'none';
+
+        try {
+          const res = await fetch('/api/cuenta/voucher/canjear', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ codigo })
+          });
+          const data = await res.json().catch(() => ({ ok: false, error: 'Respuesta inválida del servidor' }));
+
+          if (!res.ok || !data.ok) {
+            feedback.style.display = 'block';
+            feedback.style.background = '#fef2f2';
+            feedback.style.border = '1px solid #fecaca';
+            feedback.style.color = '#991b1b';
+            feedback.textContent = data.error || 'No se pudo canjear la tarjeta prepago.';
+            return;
+          }
+
+          feedback.style.display = 'block';
+          feedback.style.background = '#f0fdf4';
+          feedback.style.border = '1px solid #bbf7d0';
+          feedback.style.color = '#166534';
+          const montoStr = Number(data.credit || 0).toFixed(2);
+          const folioInfo = data.factura_folio ? ` · Comprobante: ${data.factura_folio}` : '';
+          feedback.textContent = data.idempotente
+            ? `Esta tarjeta ya había sido abonada a tu cuenta (+$${montoStr} MXN)${folioInfo}.`
+            : `Tarjeta canjeada: se abonaron $${montoStr} MXN a tu monedero${folioInfo}.`;
+
+          if (saldoEl && data.saldo_nuevo !== undefined && data.saldo_nuevo !== null) {
+            saldoEl.innerHTML = `${Number(data.saldo_nuevo).toFixed(2)} <span style="font-size: 18px; font-weight: 400; color: var(--color-ash);">MXN</span>`;
+          }
+          input.value = '';
+        } catch {
+          feedback.style.display = 'block';
+          feedback.style.background = '#fef2f2';
+          feedback.style.border = '1px solid #fecaca';
+          feedback.style.color = '#991b1b';
+          feedback.textContent = 'Error de conexión al canjear la tarjeta. Intenta de nuevo.';
+        } finally {
+          btn.disabled = false;
+          btn.textContent = 'Canjear tarjeta';
+        }
+      });
+    })();
 
     // BA1-BA2: Solicitar y ver contraseña de extensión desde el panel principal (una sola vez)
     (() => {
