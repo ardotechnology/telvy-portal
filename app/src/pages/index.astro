@@ -5,7 +5,9 @@ import {
   obtenerDatosFiscalesSentinel,
   usaRfcGenerico,
   type AvisoRevisionFiscal,
-  type DatosFiscalesFicha
+  type DatosFiscalesFicha,
+  type FacturaPendienteAlta,
+  type RegistroAltaInfo
 } from '../lib/sentinel_fiscales';
 
 // Verificación de sesión: el cliente se obtiene EXCLUSIVAMENTE de la sesión autenticada en el servidor.
@@ -129,6 +131,8 @@ const sinServiciosAprovisionados = sinServiciosActivos;
 const servidorCuenta = saldoData?.servidor || process.env.TELVY_DEFAULT_SERVIDOR || 'MB-Edge-MTY';
 let datosFiscales: DatosFiscalesFicha | null = null;
 let revisionFiscal: AvisoRevisionFiscal | null = null;
+let registroAlta: RegistroAltaInfo | null = null;
+let facturaPendiente: FacturaPendienteAlta | null = null;
 let errorFiscales: string | null = null;
 try {
   const resFiscales = await obtenerDatosFiscalesSentinel({
@@ -138,12 +142,27 @@ try {
   if (resFiscales.ok && resFiscales.cliente) {
     datosFiscales = resFiscales.cliente;
     revisionFiscal = resFiscales.revision_fiscal ?? null;
+    registroAlta = resFiscales.registro_alta ?? null;
+    facturaPendiente = resFiscales.factura_pendiente ?? null;
   } else {
     errorFiscales = resFiscales.error || null;
   }
 } catch (err: any) {
   errorFiscales = err?.message || 'No se pudieron consultar los datos fiscales';
 }
+const pendienteDePago = Boolean(
+  facturaPendiente?.ficha_pago_url ||
+    (registroAlta && String(registroAlta.estado_pago_alta || '').toLowerCase() === 'pendiente')
+);
+const planPendienteNombre =
+  facturaPendiente?.descripcion ||
+  registroAlta?.paquete_nombre ||
+  registroAlta?.plan_slug ||
+  'Paquete Telvy';
+const montoPendiente = facturaPendiente
+  ? facturaPendiente.total
+  : (registroAlta?.paquete_precio ?? null);
+const monedaPendiente = facturaPendiente?.moneda || registroAlta?.paquete_moneda || 'MXN';
 const fiscalPendiente = esFichaFiscalPendiente(datosFiscales);
 const fiscalGenerico = usaRfcGenerico(datosFiscales);
 ---
@@ -583,7 +602,52 @@ const fiscalGenerico = usaRfcGenerico(datosFiscales);
       </div>
     )}
 
-    {sinServiciosActivos && (
+    {pendienteDePago && (
+      <div class="banner-aviso" id="bannerFacturaPendiente" role="status" style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-left: 4px solid #059669; border-radius: 10px; padding: 18px 20px; margin-bottom: 4px; color: #065f46; font-size: 14px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+        <div style="display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 240px;">
+          <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #047857;">
+            Pendiente de pago{facturaPendiente?.folio ? ` · ${facturaPendiente.folio}` : ''}
+          </div>
+          <div style="font-size: 15px; font-weight: 600; color: #0f172a;">
+            {planPendienteNombre}
+            {montoPendiente !== null && (
+              <> — <span style="font-variant-numeric: tabular-nums;">${Number(montoPendiente).toFixed(2)} {monedaPendiente}</span></>
+            )}
+          </div>
+          <div style="font-size: 13px; color: #047857;">
+            En cuanto se acredite el pago, tu servicio queda activo.
+          </div>
+          <div id="portalPayErr" style="display: none; font-size: 12px; color: #b91c1c; margin-top: 4px;"></div>
+        </div>
+        {facturaPendiente?.ficha_pago_url ? (
+          <a
+            id="btnPagarFacturaInicial"
+            href={facturaPendiente.ficha_pago_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            style="background-color: #059669; color: #ffffff; text-decoration: none; padding: 10px 18px; border-radius: 8px; font-weight: 600; font-size: 14px; white-space: nowrap;"
+          >
+            Pagar
+          </a>
+        ) : (
+          <button
+            type="button"
+            id="btnGenerarProformaPortal"
+            style="background-color: #059669; color: #ffffff; border: none; padding: 10px 18px; border-radius: 8px; font-weight: 600; font-size: 14px; white-space: nowrap; cursor: pointer;"
+          >
+            Pagar
+          </button>
+        )}
+      </div>
+    )}
+
+    {!pendienteDePago && errorFiscales && (
+      <div class="banner-aviso" role="status" style="background-color: #fffbeb; border: 1px solid #fde68a; border-left: 4px solid #f59e0b; border-radius: 8px; padding: 12px 16px; margin-bottom: 4px; color: #92400e; font-size: 13px;">
+        <strong>Facturación:</strong> no pudimos consultar tu factura en este momento ({errorFiscales}).
+      </div>
+    )}
+
+    {sinServiciosActivos && !pendienteDePago && (
       <div class="banner-aviso" role="status" style="background-color: #fffbeb; border: 1px solid #fde68a; border-left: 4px solid #f59e0b; border-radius: 8px; padding: 16px 20px; margin-bottom: 24px; color: #92400e; font-size: 14px; display: flex; flex-direction: column; gap: 10px;">
         <div style="display: flex; align-items: center; gap: 10px;">
           <span style="font-size: 20px;">ℹ️</span>
@@ -616,6 +680,11 @@ const fiscalGenerico = usaRfcGenerico(datosFiscales);
           <div class="saldo-primary">
             <div class="saldo-label">Saldo</div>
             <div class="saldo-value" id="saldoValorActual">{saldoDisponible.toFixed(2)} <span style="font-size: 18px; font-weight: 400; color: var(--color-ash);">{monedaSaldo}</span></div>
+            {saldoDisponible === 0 && pendienteDePago && (
+              <div style="font-size: 13px; color: #047857; margin-top: 6px;">
+                Tu saldo permanece en 0.00 {monedaSaldo} mientras se acredita tu pago. En cuanto se acredite el pago, tu servicio queda activo.
+              </div>
+            )}
             {saldoReservado > 0 && (
               <div style="font-size: 13px; color: var(--color-ash); margin-top: 6px;">
                 Tienes {saldoReservado.toFixed(2)} retenidos por una compra en curso
@@ -1537,5 +1606,61 @@ const fiscalGenerico = usaRfcGenerico(datosFiscales);
       });
     })();
   </script>
+
+  {pendienteDePago && (
+    <script is:inline>
+      // B.4-B.6 & E.16 / CJ2: Al pulsar "Pagar" se crea la proforma on-demand (idempotente) y se abre la ficha;
+      // al regresar a la pestaña del portal tras pagar, se recarga para mostrar saldo y servicio activos.
+      (function () {
+        let abrioPago = false;
+        const btnLink = document.getElementById('btnPagarFacturaInicial');
+        btnLink?.addEventListener('click', () => {
+          abrioPago = true;
+        });
+
+        const btnGen = document.getElementById('btnGenerarProformaPortal');
+        const errEl = document.getElementById('portalPayErr');
+        btnGen?.addEventListener('click', async () => {
+          btnGen.disabled = true;
+          const prev = btnGen.textContent;
+          btnGen.textContent = 'Preparando pago...';
+          if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+          try {
+            const r = await fetch('/api/publico/alta/pagar', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: '{}'
+            });
+            const d = await r.json().catch(() => ({}));
+            if (r.ok && d.ok && d.ficha_pago_url) {
+              abrioPago = true;
+              window.open(d.ficha_pago_url, '_blank', 'noopener,noreferrer');
+              btnGen.textContent = 'Abrir ficha de pago';
+              btnGen.disabled = false;
+              return;
+            }
+            if (errEl) {
+              errEl.textContent = d.error || 'Tu factura está en proceso, contacta a servicio al cliente (soporte@telvy.net).';
+              errEl.style.display = 'block';
+            }
+          } catch {
+            if (errEl) {
+              errEl.textContent = 'Error de conexión al preparar el pago. Contacta a soporte@telvy.net.';
+              errEl.style.display = 'block';
+            }
+          }
+          btnGen.textContent = prev;
+          btnGen.disabled = false;
+        });
+
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible' && abrioPago) {
+            abrioPago = false;
+            window.location.reload();
+          }
+        });
+      })();
+    </script>
+  )}
 </body>
 </html>

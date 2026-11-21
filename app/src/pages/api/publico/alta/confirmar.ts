@@ -7,6 +7,7 @@ import {
 } from '../../../../lib/public_did_proxy';
 import { verifySupabaseEmailToken } from '../../../../lib/supabase_admin';
 import { cerrarSesionPortal } from '../../../../lib/session_cleanup';
+import { firmarTokenFichaAlta } from '../../../../lib/sentinel_fiscales';
 
 export const OPTIONS: APIRoute = async ({ request }) => {
   return new Response(null, { status: 204, headers: buildCorsHeaders(request) });
@@ -18,10 +19,16 @@ function wantsHtmlRedirect(request: Request): boolean {
   return accept.includes('text/html') && !accept.includes('application/json');
 }
 
-function redirectConfirmacion(estado: 'ok' | 'error', motivo?: string, correo?: string | null): Response {
+function redirectConfirmacion(
+  estado: 'ok' | 'error',
+  motivo?: string,
+  correo?: string | null,
+  fichaToken?: string | null
+): Response {
   const qs = new URLSearchParams({ estado });
   if (motivo) qs.set('motivo', motivo);
   if (correo && correo.trim()) qs.set('correo', correo.trim().toLowerCase());
+  if (fichaToken) qs.set('ficha_token', fichaToken);
   return new Response(null, {
     status: 302,
     headers: {
@@ -75,9 +82,17 @@ async function handleConfirmacion(
 
   const data = (await motorRes.json().catch(() => ({ ok: false, error: 'Respuesta inválida del motor' }))) as any;
   if (isBrowser) {
-    return motorRes.ok && data.ok
-      ? redirectConfirmacion('ok', undefined, verified.email)
-      : redirectConfirmacion('error', data.error || 'No se pudo confirmar tu alta.');
+    if (motorRes.ok && data.ok) {
+      const fichaToken = data.cliente
+        ? firmarTokenFichaAlta({
+            cliente: String(data.cliente),
+            servidor: data.servidor ? String(data.servidor) : undefined,
+            plan_slug: data.plan_slug ? String(data.plan_slug) : undefined
+          })
+        : null;
+      return redirectConfirmacion('ok', undefined, verified.email, fichaToken);
+    }
+    return redirectConfirmacion('error', data.error || 'No se pudo confirmar tu alta.');
   }
 
   return new Response(JSON.stringify(data), { status: motorRes.status, headers });

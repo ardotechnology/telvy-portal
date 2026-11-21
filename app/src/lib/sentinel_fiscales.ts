@@ -1,3 +1,5 @@
+import crypto from 'node:crypto';
+
 export const SENTINEL_URL_DEFAULT = 'https://sentinel.ardo.group';
 export const TELVY_DEFAULT_SERVIDOR = 'MB-Edge-MTY';
 
@@ -35,6 +37,84 @@ export interface AvisoRevisionFiscal {
   pendiente: boolean;
   factura_id: string | null;
   vence_at: string | null;
+}
+
+export interface FacturaPendienteAlta {
+  id: string;
+  folio: string;
+  descripcion: string | null;
+  total: number;
+  moneda: string;
+  estado_pago: string;
+  ficha_pago_url: string;
+  fecha_emision: string | null;
+}
+
+export interface RegistroAltaInfo {
+  plan_slug: string | null;
+  paquete_nombre: string | null;
+  paquete_precio: number | null;
+  paquete_moneda: string;
+  estado_pago_alta: 'pendiente' | 'pagado' | 'cancelado' | string;
+  created_at: string | null;
+}
+
+export interface TokenFichaAltaPayload {
+  cliente: string;
+  servidor: string;
+  plan_slug?: string;
+  exp: number;
+}
+
+function getFichaTokenSecret(secretOverride?: string): string {
+  return (
+    secretOverride ||
+    process.env.SENTINEL_INTEGRACION_KEY ||
+    process.env.CLIENT_API_INTERNAL_KEY ||
+    ''
+  ).trim();
+}
+
+export function firmarTokenFichaAlta(
+  input: { cliente: string; servidor?: string; plan_slug?: string },
+  opts?: { ttlMs?: number; nowMs?: number; secret?: string }
+): string | null {
+  const secret = getFichaTokenSecret(opts?.secret);
+  const cliente = String(input.cliente || '').trim();
+  if (!secret || !cliente) return null;
+  const payload: TokenFichaAltaPayload = {
+    cliente,
+    servidor: String(input.servidor || process.env.TELVY_DEFAULT_SERVIDOR || TELVY_DEFAULT_SERVIDOR).trim(),
+    ...(input.plan_slug ? { plan_slug: String(input.plan_slug).trim() } : {}),
+    exp: (opts?.nowMs ?? Date.now()) + (opts?.ttlMs ?? 30 * 60_000)
+  };
+  const encoded = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+  const sig = crypto.createHmac('sha256', secret).update(encoded).digest('base64url');
+  return `${encoded}.${sig}`;
+}
+
+export function verificarTokenFichaAlta(
+  token: string | null | undefined,
+  opts?: { nowMs?: number; secret?: string }
+): TokenFichaAltaPayload | null {
+  const secret = getFichaTokenSecret(opts?.secret);
+  const raw = String(token || '').trim();
+  if (!secret || !raw || !raw.includes('.')) return null;
+  const [encoded, sig] = raw.split('.');
+  if (!encoded || !sig) return null;
+  const expected = crypto.createHmac('sha256', secret).update(encoded).digest('base64url');
+  const a = Buffer.from(sig);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as TokenFichaAltaPayload;
+    if (!parsed?.cliente || !parsed?.exp || parsed.exp < (opts?.nowMs ?? Date.now())) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
 }
 
 export function esFichaFiscalPendiente(ficha: DatosFiscalesFicha | null): boolean {
@@ -103,6 +183,8 @@ export async function obtenerDatosFiscalesSentinel(
   status: number;
   cliente?: DatosFiscalesFicha;
   revision_fiscal?: AvisoRevisionFiscal | null;
+  registro_alta?: RegistroAltaInfo | null;
+  factura_pendiente?: FacturaPendienteAlta | null;
   error?: string;
 }> {
   const { baseUrl, key, doFetch } = getSentinelConfig(opts);
@@ -129,7 +211,9 @@ export async function obtenerDatosFiscalesSentinel(
         ok: true,
         status: res.status,
         cliente: data.cliente,
-        revision_fiscal: data.revision_fiscal ?? null
+        revision_fiscal: data.revision_fiscal ?? null,
+        registro_alta: data.registro_alta ?? null,
+        factura_pendiente: data.factura_pendiente ?? null
       };
     }
     return {
@@ -184,6 +268,72 @@ export async function guardarDatosFiscalesSentinel(
       ok: false,
       status: res.status,
       error: data?.error || `No se pudieron guardar los datos fiscales (HTTP ${res.status})`
+    };
+  } catch (err: any) {
+    return {
+      ok: false,
+      status: 502,
+      error: err?.message || 'No se pudo conectar con el servicio de facturación'
+    };
+  }
+}
+
+/**
+ * B.4-B.6 / CJ2: Crea (o reutiliza idempotentemente) la proforma en borrador en Sentinel
+ * ÚNICAMENTE cuando el cliente pulsa el botón "Pagar".
+ */
+export async function crearProformaAltaSentinel(
+  params: { servidor?: string; cliente_username: string; periodo?: string },
+  opts?: SentinelClientOptions
+): Promise<{
+  ok: boolean;
+  status: number;
+  existente?: boolean;
+  factura_id?: string;
+  folio?: string;
+  descripcion?: string;
+  total?: number;
+  moneda?: string;
+  ficha_pago_url?: string;
+  error?: string;
+}> {
+  const { baseUrl, key, doFetch } = getSentinelConfig(opts);
+  if (!key) {
+    return { ok: false, status: 500, error: 'Configuración de integración no disponible' };
+  }
+
+  const servidor = (params.servidor || process.env.TELVY_DEFAULT_SERVIDOR || TELVY_DEFAULT_SERVIDOR).trim();
+  try {
+    const res = await doFetch(`${baseUrl}/api/integracion/proforma-alta`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${key}`
+      },
+      body: JSON.stringify({
+        servidor,
+        cliente_username: params.cliente_username,
+        ...(params.periodo ? { periodo: params.periodo } : {})
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data?.ok && data?.ficha_pago_url) {
+      return {
+        ok: true,
+        status: res.status,
+        existente: Boolean(data.existente),
+        factura_id: String(data.factura_id || ''),
+        folio: String(data.folio || ''),
+        descripcion: data.descripcion ? String(data.descripcion) : undefined,
+        total: Number(data.total || 0),
+        moneda: String(data.moneda || 'MXN'),
+        ficha_pago_url: String(data.ficha_pago_url)
+      };
+    }
+    return {
+      ok: false,
+      status: res.status,
+      error: data?.error || `No se pudo generar la proforma de pago (HTTP ${res.status})`
     };
   } catch (err: any) {
     return {
