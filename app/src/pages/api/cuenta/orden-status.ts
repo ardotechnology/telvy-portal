@@ -61,7 +61,8 @@ export const GET: APIRoute = async ({ request, locals }) => {
         mensaje: traduccion.mensaje,
         error_publico: data.error_publico || traduccion.error_publico,
         puede_reintentar: traduccion.puede_reintentar,
-        explicacion: traduccion.explicacion ?? null
+        explicacion: traduccion.explicacion ?? null,
+        ...(data.resultado ? { resultado: data.resultado } : {})
       }),
       {
         status: 200,

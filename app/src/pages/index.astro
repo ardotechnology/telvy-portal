@@ -1298,6 +1298,29 @@ const fiscalGenerico = usaRfcGenerico(datosFiscales);
 
       if (!form || !input || !btn || !feedback) return;
 
+      const showVoucherMsg = (ok: boolean, text: string) => {
+        feedback.style.display = 'block';
+        feedback.style.background = ok ? '#f0fdf4' : '#fef2f2';
+        feedback.style.border = ok ? '1px solid #bbf7d0' : '1px solid #fecaca';
+        feedback.style.color = ok ? '#166534' : '#991b1b';
+        feedback.textContent = text;
+      };
+
+      const aplicarResultadoCanje = (info: any) => {
+        const montoStr = Number(info.credit || 0).toFixed(2);
+        const folioInfo = info.factura_folio ? ` · Comprobante: ${info.factura_folio}` : '';
+        showVoucherMsg(
+          true,
+          info.idempotente
+            ? `Esta tarjeta ya había sido abonada a tu cuenta (+$${montoStr} MXN)${folioInfo}.`
+            : `Tarjeta canjeada: se abonaron $${montoStr} MXN a tu monedero${folioInfo}.`
+        );
+        if (saldoEl && info.saldo_nuevo !== undefined && info.saldo_nuevo !== null) {
+          saldoEl.innerHTML = `${Number(info.saldo_nuevo).toFixed(2)} <span style="font-size: 18px; font-weight: 400; color: var(--color-ash);">MXN</span>`;
+        }
+        input.value = '';
+      };
+
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
         const codigo = input.value.trim();
@@ -1316,35 +1339,67 @@ const fiscalGenerico = usaRfcGenerico(datosFiscales);
           const data = await res.json().catch(() => ({ ok: false, error: 'Respuesta inválida del servidor' }));
 
           if (!res.ok || !data.ok) {
-            feedback.style.display = 'block';
-            feedback.style.background = '#fef2f2';
-            feedback.style.border = '1px solid #fecaca';
-            feedback.style.color = '#991b1b';
-            feedback.textContent = data.error || 'No se pudo canjear la tarjeta prepago.';
+            showVoucherMsg(false, data.error || 'No se pudo canjear la tarjeta prepago.');
+            btn.disabled = false;
+            btn.textContent = 'Canjear tarjeta';
+            return;
+          }
+
+          // Respuesta idempotente inmediata (200)
+          if (res.status === 200 && data.idempotente) {
+            aplicarResultadoCanje(data);
+            btn.disabled = false;
+            btn.textContent = 'Canjear tarjeta';
+            return;
+          }
+
+          // CB2 & CB4: orden encolada (202) -> consultar /api/cuenta/orden-status hasta completar
+          const ordenId = data.orden_id;
+          if (!ordenId) {
+            aplicarResultadoCanje(data);
+            btn.disabled = false;
+            btn.textContent = 'Canjear tarjeta';
             return;
           }
 
           feedback.style.display = 'block';
-          feedback.style.background = '#f0fdf4';
-          feedback.style.border = '1px solid #bbf7d0';
-          feedback.style.color = '#166534';
-          const montoStr = Number(data.credit || 0).toFixed(2);
-          const folioInfo = data.factura_folio ? ` · Comprobante: ${data.factura_folio}` : '';
-          feedback.textContent = data.idempotente
-            ? `Esta tarjeta ya había sido abonada a tu cuenta (+$${montoStr} MXN)${folioInfo}.`
-            : `Tarjeta canjeada: se abonaron $${montoStr} MXN a tu monedero${folioInfo}.`;
+          feedback.style.background = '#f0f9ff';
+          feedback.style.border = '1px solid #bae6fd';
+          feedback.style.color = '#0369a1';
+          feedback.textContent = 'Aplicando recarga al monedero...';
 
-          if (saldoEl && data.saldo_nuevo !== undefined && data.saldo_nuevo !== null) {
-            saldoEl.innerHTML = `${Number(data.saldo_nuevo).toFixed(2)} <span style="font-size: 18px; font-weight: 400; color: var(--color-ash);">MXN</span>`;
-          }
-          input.value = '';
+          let intentos = 0;
+          const timer = setInterval(async () => {
+            intentos++;
+            try {
+              const chk = await fetch(`/api/cuenta/orden-status?orden_id=${encodeURIComponent(ordenId)}`);
+              const chkData = await chk.json().catch(() => ({}));
+              if (chkData.estado === 'completado') {
+                clearInterval(timer);
+                aplicarResultadoCanje(chkData.resultado || data);
+                btn.disabled = false;
+                btn.textContent = 'Canjear tarjeta';
+                return;
+              }
+              if (chkData.estado === 'fallido' || chkData.estado === 'compensado' || chkData.terminal) {
+                clearInterval(timer);
+                showVoucherMsg(false, chkData.error_publico || 'No se pudo aplicar el canje de la tarjeta. Intenta nuevamente.');
+                btn.disabled = false;
+                btn.textContent = 'Canjear tarjeta';
+                return;
+              }
+              if (intentos >= 20) {
+                clearInterval(timer);
+                feedback.textContent = `Tu canje (${ordenId}) sigue en proceso. Recarga en unos segundos para ver tu saldo.`;
+                btn.disabled = false;
+                btn.textContent = 'Canjear tarjeta';
+              }
+            } catch {
+              // Ignorar errores transitorios de sondeo
+            }
+          }, 1500);
         } catch {
-          feedback.style.display = 'block';
-          feedback.style.background = '#fef2f2';
-          feedback.style.border = '1px solid #fecaca';
-          feedback.style.color = '#991b1b';
-          feedback.textContent = 'Error de conexión al canjear la tarjeta. Intenta de nuevo.';
-        } finally {
+          showVoucherMsg(false, 'Error de conexión al canjear la tarjeta. Intenta de nuevo.');
           btn.disabled = false;
           btn.textContent = 'Canjear tarjeta';
         }
