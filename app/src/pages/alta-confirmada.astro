@@ -1,6 +1,7 @@
 ---
 import { cerrarSesionPortal } from '../lib/session_cleanup';
 import {
+  crearProformaAltaSentinel,
   obtenerDatosFiscalesSentinel,
   verificarTokenFichaAlta,
   type FacturaPendienteAlta,
@@ -29,7 +30,7 @@ if (esExito && fichaToken) {
   const tokenPayload = verificarTokenFichaAlta(fichaToken);
   if (tokenPayload) {
     planSlug = tokenPayload.plan_slug || null;
-    // F.18 / CJ6: Consulta estrictamente de sólo lectura (no crea factura ni devengo)
+    // CN4: Consultar el alta y crear la proforma al confirmar si aún no existe (idempotente)
     const res = await obtenerDatosFiscalesSentinel({
       servidor: tokenPayload.servidor,
       cliente_username: tokenPayload.cliente
@@ -37,11 +38,37 @@ if (esExito && fichaToken) {
     if (res.ok) {
       registroAlta = res.registro_alta ?? null;
       facturaPendiente = res.factura_pendiente ?? null;
+      if (
+        !facturaPendiente?.ficha_pago_url &&
+        registroAlta &&
+        String(registroAlta.estado_pago_alta || '').toLowerCase() !== 'pagado' &&
+        registroAlta.paquete_precio !== null &&
+        Number(registroAlta.paquete_precio) > 0
+      ) {
+        const profRes = await crearProformaAltaSentinel({
+          servidor: tokenPayload.servidor,
+          cliente_username: tokenPayload.cliente
+        });
+        if (profRes.ok && profRes.ficha_pago_url) {
+          facturaPendiente = {
+            id: String(profRes.factura_id || ''),
+            folio: String(profRes.folio || ''),
+            descripcion: profRes.descripcion || null,
+            total: Number(profRes.total ?? registroAlta.paquete_precio),
+            moneda: profRes.moneda || registroAlta.paquete_moneda || 'MXN',
+            estado_pago: 'pendiente',
+            ficha_pago_url: profRes.ficha_pago_url,
+            fecha_emision: null
+          };
+        } else {
+          facturaError = profRes.error || 'No se pudo generar la proforma de pago en facturación.';
+        }
+      }
       const tieneImporte = Boolean(
         facturaPendiente?.ficha_pago_url ||
           (registroAlta && registroAlta.paquete_precio !== null && Number(registroAlta.paquete_precio) > 0)
       );
-      if (!tieneImporte) {
+      if (!tieneImporte && !facturaError) {
         debeConsultarEnCliente = true;
       }
     } else if (res.status !== 404) {
@@ -141,9 +168,10 @@ const monedaVisible = facturaPendiente?.moneda || registroAlta?.paquete_moneda |
               </div>
             ) : facturaError ? (
               <div class="ficha-error">
-                <strong>Tu factura está en proceso, contacta a servicio al cliente</strong> ({facturaError}).
+                <strong>No se pudo generar tu proforma de pago.</strong>
+                <div style="margin-top: 0.35rem;">Motivo: {facturaError}</div>
                 <div style="margin-top: 0.45rem;">
-                  Contacto: <a href="mailto:soporte@telvy.net" style="color: #92400e; font-weight: 600;">soporte@telvy.net</a>
+                  Soporte: <a href="mailto:soporte@telvy.net" style="color: #92400e; font-weight: 600;">soporte@telvy.net</a>
                 </div>
               </div>
             ) : debeConsultarEnCliente ? (
@@ -180,12 +208,16 @@ const monedaVisible = facturaPendiente?.moneda || registroAlta?.paquete_moneda |
                 const textoOriginal = btn.textContent;
                 btn.textContent = 'Preparando pago...';
                 if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 15000);
                 try {
                   const r = await fetch('/api/publico/alta/pagar', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ token: fichaToken })
+                    body: JSON.stringify({ token: fichaToken }),
+                    signal: controller.signal
                   });
+                  clearTimeout(timeoutId);
                   const d = await r.json().catch(() => ({}));
                   if (r.ok && d.ok && d.ficha_pago_url) {
                     window.open(d.ficha_pago_url, '_blank', 'noopener,noreferrer');
@@ -194,12 +226,17 @@ const monedaVisible = facturaPendiente?.moneda || registroAlta?.paquete_moneda |
                     return;
                   }
                   if (errEl) {
-                    errEl.textContent = d.error || 'No se pudo generar la proforma de pago. Contacta a soporte@telvy.net.';
+                    const causa = d.error || ('HTTP ' + r.status + ': no se pudo generar la proforma de pago');
+                    errEl.textContent = 'No se pudo generar tu proforma de pago (' + causa + '). Contacta a soporte@telvy.net.';
                     errEl.style.display = 'block';
                   }
-                } catch {
+                } catch (err) {
+                  clearTimeout(timeoutId);
                   if (errEl) {
-                    errEl.textContent = 'Error de conexión al preparar el pago. Contacta a soporte@telvy.net.';
+                    const causa = err && err.name === 'AbortError'
+                      ? 'tiempo de espera agotado al contactar facturación'
+                      : ((err && err.message) || 'error de conexión');
+                    errEl.textContent = 'No se pudo generar tu proforma de pago (' + causa + '). Contacta a soporte@telvy.net.';
                     errEl.style.display = 'block';
                   }
                 }
@@ -217,10 +254,11 @@ const monedaVisible = facturaPendiente?.moneda || registroAlta?.paquete_moneda |
 
               enlazarBotonPagar();
 
-              // F.18-F.19 / CJ6: Polling estrictamente de sólo lectura; se detiene tras 2 intentos
+              // CN4: Polling acotado a 2 intentos; si falla, mostrar motivo real + soporte (nunca "en proceso")
               if (debeConsultarEnCliente && fichaToken) {
                 let intentos = 0;
                 const maxIntentos = 2;
+                let ultimoMotivo = 'No se recibió respuesta del servicio de facturación.';
 
                 async function consultar() {
                   intentos++;
@@ -229,6 +267,11 @@ const monedaVisible = facturaPendiente?.moneda || registroAlta?.paquete_moneda |
                       cache: 'no-store'
                     });
                     const d = await r.json().catch(() => ({}));
+                    if (d && d.error) {
+                      ultimoMotivo = String(d.error);
+                    } else if (!r.ok) {
+                      ultimoMotivo = 'HTTP ' + r.status + ' al consultar facturación.';
+                    }
                     if (r.ok && d.ok && d.lista) {
                       const f = d.factura_pendiente;
                       const reg = d.registro_alta;
@@ -241,6 +284,9 @@ const monedaVisible = facturaPendiente?.moneda || registroAlta?.paquete_moneda |
                       const accionHtml = f && f.ficha_pago_url
                         ? '<a href="' + escapeHtml(f.ficha_pago_url) + '" target="_blank" rel="noopener noreferrer" class="btn btn-pay">Pagar</a>'
                         : '<button type="button" id="btnGenerarYPagar" class="btn btn-pay">Pagar</button>';
+                      const errorInline = d.error
+                        ? '<div id="payErr" class="pay-err" style="display:block;">No se pudo generar tu proforma (' + escapeHtml(d.error) + '). Contacta a soporte@telvy.net.</div>'
+                        : '<div id="payErr" class="pay-err"></div>';
 
                       contenedor.innerHTML =
                         '<div class="ficha-box">' +
@@ -248,14 +294,14 @@ const monedaVisible = facturaPendiente?.moneda || registroAlta?.paquete_moneda |
                         '<div class="ficha-desc">' + escapeHtml(desc) + '</div>' +
                         '<div class="ficha-monto">$' + escapeHtml(totalNum.toFixed(2) + ' ' + moneda) + '</div>' +
                         accionHtml +
-                        '<div id="payErr" class="pay-err"></div>' +
+                        errorInline +
                         '<p class="ficha-nota">En cuanto se acredite el pago, tu servicio queda activo.</p>' +
                         '</div>';
                       enlazarBotonPagar();
                       return;
                     }
-                  } catch {
-                    // continúa hasta agotar los 2 intentos
+                  } catch (err) {
+                    ultimoMotivo = (err && err.message) || 'Error de conexión al consultar facturación.';
                   }
 
                   if (intentos < maxIntentos) {
@@ -263,8 +309,9 @@ const monedaVisible = facturaPendiente?.moneda || registroAlta?.paquete_moneda |
                   } else {
                     contenedor.innerHTML =
                       '<div class="ficha-error">' +
-                      '<strong>Tu factura está en proceso, contacta a servicio al cliente.</strong>' +
-                      '<div style="margin-top: 0.45rem;">Contacto: <a href="mailto:soporte@telvy.net" style="color: #92400e; font-weight: 600;">soporte@telvy.net</a></div>' +
+                      '<strong>No se pudo generar tu proforma de pago.</strong>' +
+                      '<div style="margin-top: 0.35rem;">Motivo: ' + escapeHtml(ultimoMotivo) + '</div>' +
+                      '<div style="margin-top: 0.45rem;">Soporte: <a href="mailto:soporte@telvy.net" style="color: #92400e; font-weight: 600;">soporte@telvy.net</a></div>' +
                       '</div>';
                   }
                 }

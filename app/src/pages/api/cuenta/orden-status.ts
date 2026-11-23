@@ -49,13 +49,20 @@ export const GET: APIRoute = async ({ request, locals }) => {
       });
     }
 
-    // Traducción canónica: el texto crudo del motor NUNCA se devuelve al cliente browser
-    const traduccion = traducirEstadoOrden(data.estado, ordenId, data.completado_at || data.fecha);
+    // CN5: Propagar el motivo real del motor (error_publico) y el tipo de orden para nunca atribuir a la baja otros fallos
+    const traduccion = traducirEstadoOrden(
+      data.estado,
+      ordenId,
+      data.completado_at || data.fecha,
+      data.tipo,
+      data.error_publico
+    );
 
     return new Response(
       JSON.stringify({
         ok: true,
         orden_id: ordenId,
+        tipo: data.tipo ?? null,
         estado: data.estado,
         terminal: data.terminal !== undefined ? Boolean(data.terminal) : traduccion.terminal,
         mensaje: traduccion.mensaje,

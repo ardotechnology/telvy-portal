@@ -95,11 +95,10 @@ try {
 
 const errorConexionServicios =
   conexionFallida ||
-  (errorSaldo && errorSaldo.includes('fetch failed')) ||
-  (errorExt && errorExt.includes('fetch failed')) ||
-  (errorTronk && errorTronk.includes('fetch failed')) ||
-  (errorDids && errorDids.includes('fetch failed')) ||
-  errorExt === 'HTTP 0' || errorTronk === 'HTTP 0' || errorDids === 'HTTP 0';
+  Boolean(errorSaldo) ||
+  Boolean(errorExt) ||
+  Boolean(errorTronk) ||
+  Boolean(errorDids);
 
 const estadoNoDisponible = Boolean(errorConexionServicios);
 
@@ -150,7 +149,9 @@ try {
 } catch (err: any) {
   errorFiscales = err?.message || 'No se pudieron consultar los datos fiscales';
 }
-const pendienteDePago = Boolean(
+// CN6: Si ya hay saldo positivo acreditado (p. ej. tras canje de tarjeta), la cuenta deja de mostrarse pendiente de pago del alta
+const tieneSaldoPositivo = tieneSaldoValido && saldoDisponible !== null && saldoDisponible > 0;
+const pendienteDePago = !tieneSaldoPositivo && Boolean(
   facturaPendiente?.ficha_pago_url ||
     (registroAlta && String(registroAlta.estado_pago_alta || '').toLowerCase() === 'pendiente')
 );
@@ -681,7 +682,7 @@ const fiscalGenerico = usaRfcGenerico(datosFiscales);
             <div class="saldo-label">Saldo</div>
             <div class="saldo-value" id="saldoValorActual">{saldoDisponible.toFixed(2)} <span style="font-size: 18px; font-weight: 400; color: var(--color-ash);">{monedaSaldo}</span></div>
             {saldoDisponible === 0 && pendienteDePago && (
-              <div style="font-size: 13px; color: #047857; margin-top: 6px;">
+              <div id="avisoSaldoCero" style="font-size: 13px; color: #047857; margin-top: 6px;">
                 Tu saldo permanece en 0.00 {monedaSaldo} mientras se acredita tu pago. En cuanto se acredite el pago, tu servicio queda activo.
               </div>
             )}
@@ -748,7 +749,11 @@ const fiscalGenerico = usaRfcGenerico(datosFiscales);
           </a>
         </div>
       </div>
-      {extensionesData.length > 0 ? (
+      {errorExt ? (
+        <div class="empty-state">
+          Estado no disponible. No fue posible consultar las extensiones en el conmutador ({errorExt}).
+        </div>
+      ) : extensionesData.length > 0 ? (
         <div class="table-wrapper">
           <table>
             <thead>
@@ -1387,6 +1392,14 @@ const fiscalGenerico = usaRfcGenerico(datosFiscales);
         if (saldoEl && info.saldo_nuevo !== undefined && info.saldo_nuevo !== null) {
           saldoEl.innerHTML = `${Number(info.saldo_nuevo).toFixed(2)} <span style="font-size: 18px; font-weight: 400; color: var(--color-ash);">MXN</span>`;
         }
+        // CN6: En cuanto hay saldo acreditado, ocultar el aviso de saldo 0 y el banner de pendiente de pago
+        const saldoPostCanje = Number(info.saldo_nuevo ?? info.credit ?? 0);
+        if (Number.isFinite(saldoPostCanje) && saldoPostCanje > 0) {
+          const avisoCero = document.getElementById('avisoSaldoCero');
+          if (avisoCero) avisoCero.style.display = 'none';
+          const bannerPend = document.getElementById('bannerFacturaPendiente');
+          if (bannerPend) bannerPend.style.display = 'none';
+        }
         input.value = '';
       };
 
@@ -1625,12 +1638,16 @@ const fiscalGenerico = usaRfcGenerico(datosFiscales);
           const prev = btnGen.textContent;
           btnGen.textContent = 'Preparando pago...';
           if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 15000);
           try {
             const r = await fetch('/api/publico/alta/pagar', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: '{}'
+              body: '{}',
+              signal: controller.signal
             });
+            clearTimeout(timeoutId);
             const d = await r.json().catch(() => ({}));
             if (r.ok && d.ok && d.ficha_pago_url) {
               abrioPago = true;
@@ -1640,12 +1657,17 @@ const fiscalGenerico = usaRfcGenerico(datosFiscales);
               return;
             }
             if (errEl) {
-              errEl.textContent = d.error || 'Tu factura está en proceso, contacta a servicio al cliente (soporte@telvy.net).';
+              const causa = d.error || ('HTTP ' + r.status + ': no se pudo generar la proforma de pago');
+              errEl.textContent = 'No se pudo generar tu proforma de pago (' + causa + '). Contacta a soporte@telvy.net.';
               errEl.style.display = 'block';
             }
-          } catch {
+          } catch (err) {
+            clearTimeout(timeoutId);
             if (errEl) {
-              errEl.textContent = 'Error de conexión al preparar el pago. Contacta a soporte@telvy.net.';
+              const causa = err && err.name === 'AbortError'
+                ? 'tiempo de espera agotado al contactar facturación'
+                : ((err && err.message) || 'error de conexión');
+              errEl.textContent = 'No se pudo generar tu proforma de pago (' + causa + '). Contacta a soporte@telvy.net.';
               errEl.style.display = 'block';
             }
           }

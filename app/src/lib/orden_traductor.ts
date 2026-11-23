@@ -16,9 +16,14 @@ export interface TraduccionOrden {
 export function traducirEstadoOrden(
   estado: string | undefined | null,
   ordenId: string,
-  fecha?: string | Date | null
+  fecha?: string | Date | null,
+  tipo?: string | null,
+  errorPublicoMotor?: string | null
 ): TraduccionOrden {
   const normEstado = String(estado ?? '').trim().toLowerCase();
+  const normTipo = String(tipo ?? '').trim().toLowerCase();
+  const esBaja = !normTipo || normTipo.startsWith('baja_');
+  const motivoMotor = String(errorPublicoMotor ?? '').trim() || null;
 
   let fechaStr = '';
   if (fecha) {
@@ -40,29 +45,48 @@ export function traducirEstadoOrden(
       return {
         estado: 'completado',
         terminal: true,
-        mensaje: `Tu baja se completó el ${fechaStr}.`,
+        mensaje: esBaja
+          ? `Tu baja se completó el ${fechaStr}.`
+          : normTipo === 'canje_voucher'
+            ? 'El canje de tu tarjeta se completó correctamente.'
+            : 'La operación se completó correctamente.',
         puede_reintentar: false,
         error_publico: null
       };
 
-    case 'compensado':
+    case 'compensado': {
+      const msgCompensado =
+        motivoMotor ||
+        (esBaja
+          ? 'No se pudo completar: no había servicios que retirar. Tu cuenta quedó como estaba.'
+          : normTipo === 'canje_voucher'
+            ? 'No se pudo completar el canje de la tarjeta prepago. Tu saldo no cambió.'
+            : 'No se pudo completar la operación. Nada cambió en tu cuenta.');
       return {
         estado: 'compensado',
         terminal: true,
-        mensaje: 'No se pudo completar: no había servicios que retirar. Tu cuenta quedó como estaba.',
+        mensaje: msgCompensado,
         puede_reintentar: true,
         explicacion: 'La operación no cambió nada en tu cuenta.',
-        error_publico: 'No se pudo completar: no había servicios que retirar. Tu cuenta quedó como estaba.'
+        error_publico: msgCompensado
       };
+    }
 
     case 'fallido':
+    case 'compensacion_incompleta': {
+      const msgFallido =
+        motivoMotor ||
+        (normTipo === 'canje_voucher'
+          ? 'No se pudo completar el canje de la tarjeta prepago. Tu saldo no cambió.'
+          : 'No se pudo completar la operación. Nada cambió en tu cuenta.');
       return {
-        estado: 'fallido',
+        estado: normEstado,
         terminal: true,
-        mensaje: 'No se pudo completar la operación. Nada cambió en tu cuenta.',
+        mensaje: msgFallido,
         puede_reintentar: true,
-        error_publico: 'No se pudo completar la operación. Nada cambió en tu cuenta.'
+        error_publico: msgFallido
       };
+    }
 
     case 'pendiente':
     case 'en_proceso':

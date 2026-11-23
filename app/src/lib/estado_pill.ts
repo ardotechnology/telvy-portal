@@ -21,10 +21,20 @@ export interface PildoraEstado {
 
 export function formatearPildoraEstado(
   tipo: TipoRecursoVoip,
-  online: boolean,
+  online: boolean | null | undefined,
   rawStatus?: string | null
 ): PildoraEstado {
   const isExt = tipo === 'ext' || tipo === 'extension';
+
+  // CN2: Mostrar "Desconectada" sólo cuando el conmutador confirma online === false;
+  // si el estado no fue confirmado (null/undefined), mostrar "No disponible".
+  if (online === null || online === undefined) {
+    return {
+      texto: 'No disponible',
+      meta: 'sin verificar',
+      clase: 'pill-offline'
+    };
+  }
 
   // 1. Etiqueta principal (texto) según el tipo de recurso
   let texto = '';
