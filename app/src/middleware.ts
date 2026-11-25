@@ -38,12 +38,17 @@ export const onRequest = defineMiddleware(async (context, next) => {
     pathname === '/paquetes' ||
     pathname === '/alta-confirmada' ||
     pathname.startsWith('/api/publico/') ||
+    pathname.startsWith('/api/interno/') ||
     pathname.startsWith('/_astro') ||
     pathname.startsWith('/api/auth') ||
     pathname === '/favicon.ico';
 
-  // AM3: las rutas de API públicas y /alta-confirmada nunca cargan ni operan sobre una sesión ajena
-  if (pathname.startsWith('/api/publico/') || pathname === '/alta-confirmada') {
+  // AM3: las rutas de API públicas, internas server-to-server y /alta-confirmada nunca cargan ni operan sobre una sesión ajena
+  if (
+    pathname.startsWith('/api/publico/') ||
+    pathname.startsWith('/api/interno/') ||
+    pathname === '/alta-confirmada'
+  ) {
     context.locals.user = null;
     context.locals.portalCuenta = null;
     return next();
