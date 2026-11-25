@@ -177,7 +177,7 @@ try {
     console.log('✅ Caso 1 (huérfano SIN fila): se limpia y el alta completa (201), 0 filas ajenas tocadas');
   }
 
-  // Caso 2: Cuenta ACTIVA -> 409 con mensaje actual y 0 borrados
+  // Caso 2: Cuenta ACTIVA con extensión viva en el motor -> 409 con mensaje actual y 0 borrados
   {
     const fake = makeFakeSupabase({
       cuentas: [
@@ -188,13 +188,26 @@ try {
 
     const cuentasAntes = fake.cuentas.length;
     const authAntes = fake.authUsers.length;
+    const motorConExtension: typeof fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          ok: true,
+          cliente: 'cli_real',
+          id_user: 10,
+          extensiones: [{ id: 1, name: 'cli_real101', status: 1, activo: true, online: true }]
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )) as any;
 
     const res = await createSupabaseUserWithConfirmation({
       email: 'real@telvy.test',
       password: 'Password123!',
       nombre: 'Cliente Real',
       telefono: '8110000001',
-      supabaseClient: fake.client
+      supabaseClient: fake.client,
+      gateUrl: 'http://motor.test:4100',
+      internalKey: 'internal-test-key',
+      fetcher: motorConExtension
     });
 
     assert.equal(res.ok, false);
@@ -204,7 +217,46 @@ try {
     assert.deepEqual(fake.deletedCuentaIds, []);
     assert.equal(fake.cuentas.length, cuentasAntes);
     assert.equal(fake.authUsers.length, authAntes);
-    console.log('✅ Caso 2 (cuenta ACTIVA): 409 con mensaje actual y cero borrados');
+    console.log('✅ Caso 2 (cuenta ACTIVA con extensión en motor): 409 con mensaje actual y cero borrados');
+  }
+
+  // Caso 2b: Cuenta ACTIVA pero el motor no responde -> 502 con motivo real y 0 borrados (nunca a ciegas)
+  {
+    erroresLogueados.length = 0;
+    const fake = makeFakeSupabase({
+      cuentas: [
+        { auth_user_id: 'real-down', cliente: 'cli_down', email: 'motordown@telvy.test', estado: 'activa' }
+      ],
+      authUsers: [{ id: 'real-down', email: 'motordown@telvy.test' }]
+    });
+
+    const cuentasAntes = fake.cuentas.length;
+    const authAntes = fake.authUsers.length;
+    const motorCaido: typeof fetch = (async () => {
+      throw new Error('ECONNREFUSED motor no responde');
+    }) as any;
+
+    const res = await createSupabaseUserWithConfirmation({
+      email: 'motordown@telvy.test',
+      password: 'Password123!',
+      nombre: 'Cliente Motor Caído',
+      telefono: '8110000009',
+      supabaseClient: fake.client,
+      gateUrl: 'http://motor.test:4100',
+      internalKey: 'internal-test-key',
+      fetcher: motorCaido
+    });
+
+    assert.equal(res.ok, false);
+    assert.equal(res.status, 502, 'Cuando el motor no responde debe devolver 502');
+    assert.ok(res.error && res.error.includes('ECONNREFUSED'), `Debe reportar el motivo real (recibido: ${res.error})`);
+    assert.ok(!res.error?.includes('inicia sesión'));
+    assert.deepEqual(fake.deletedAuthIds, []);
+    assert.deepEqual(fake.deletedCuentaIds, []);
+    assert.equal(fake.cuentas.length, cuentasAntes);
+    assert.equal(fake.authUsers.length, authAntes);
+    assert.ok(erroresLogueados.some((l) => l.includes('ECONNREFUSED')));
+    console.log('✅ Caso 2b (motor caído): 502 con motivo real y cero borrados');
   }
 
   // Caso 3: Fila con estado = 'suspendida' -> 409 nombrando el estado, y conteo de filas y usuarios Auth NO cambia
