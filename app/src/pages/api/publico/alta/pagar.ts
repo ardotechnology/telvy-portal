@@ -3,7 +3,45 @@ import {
   crearProformaAltaSentinel,
   resolverServidorClienteMotor,
   verificarTokenFichaAlta
-} from '../../../../lib/sentinel_fiscales';
+} from '../../../../lib/sentinel_fiscales.ts';
+
+/**
+ * Resuelve el cliente vinculado a la sesión propia de Supabase cuando la ruta pública
+ * es invocada desde el portal autenticado (el middleware no carga sesión en /api/publico/*).
+ * Nunca lee el cliente desde el body ni desde parámetros de la petición.
+ */
+async function resolverClienteDesdeSesionPropia(locals: any): Promise<string> {
+  const cuentaLocal = locals?.portalCuenta;
+  if (cuentaLocal?.cliente && (!cuentaLocal.estado || cuentaLocal.estado === 'activa')) {
+    return String(cuentaLocal.cliente).trim();
+  }
+
+  const supabase = locals?.supabase;
+  if (!supabase?.auth?.getUser || typeof supabase.from !== 'function') {
+    return '';
+  }
+
+  try {
+    const {
+      data: { user },
+      error: userErr
+    } = await supabase.auth.getUser();
+    if (userErr || !user?.id) return '';
+
+    const { data: cuenta, error: cuentaErr } = await supabase
+      .from('portal_cuenta_usuario')
+      .select('cliente, estado')
+      .eq('auth_user_id', user.id)
+      .single();
+
+    if (cuentaErr || !cuenta?.cliente || cuenta.estado !== 'activa') {
+      return '';
+    }
+    return String(cuenta.cliente).trim();
+  } catch {
+    return '';
+  }
+}
 
 /**
  * B.4-B.6 / CJ2: Único endpoint que crea (de forma idempotente) la proforma en borrador
@@ -32,14 +70,16 @@ export const POST: APIRoute = async ({ request, locals }) => {
     }
     clienteUsername = payload.cliente;
     servidor = payload.servidor;
-  } else if ((locals as any)?.portalCuenta?.cliente) {
-    clienteUsername = String((locals as any).portalCuenta.cliente).trim();
-    servidor = await resolverServidorClienteMotor(clienteUsername);
   } else {
-    return new Response(
-      JSON.stringify({ ok: false, error: 'Sesión o token de alta requerido para generar la proforma.' }),
-      { status: 401, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } }
-    );
+    const clienteSesion = await resolverClienteDesdeSesionPropia(locals);
+    if (!clienteSesion) {
+      return new Response(
+        JSON.stringify({ ok: false, error: 'Sesión o token de alta requerido para generar la proforma.' }),
+        { status: 401, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } }
+      );
+    }
+    clienteUsername = clienteSesion;
+    servidor = await resolverServidorClienteMotor(clienteUsername);
   }
 
   const res = await crearProformaAltaSentinel({
