@@ -26,55 +26,99 @@ function getServiceClient(): SupabaseClient {
   });
 }
 
-async function limpiarUsuarioAuthHuerfanoSiNoTieneCuenta(
+export async function limpiarUsuarioAuthHuerfanoSiNoTieneCuenta(
   supabase: SupabaseClient,
   email: string
-): Promise<{ tieneCuentaActiva: boolean; huerfanoEliminado: boolean }> {
+): Promise<{
+  tieneCuentaActiva: boolean;
+  estadoCuenta?: string;
+  huerfanoEliminado: boolean;
+  errorLimpieza?: string;
+}> {
   const emailNorm = email.trim().toLowerCase();
 
-  // 1. Verificar si existe una cuenta REAL activa en portal_cuenta_usuario para este correo
-  const { data: cuentaActiva, error: ctaErr } = await supabase
-    .from('portal_cuenta_usuario')
-    .select('id, auth_user_id, cliente, estado')
-    .ilike('email', emailNorm)
-    .eq('estado', 'activa')
-    .limit(1);
+  try {
+    // 1. Verificar si existe CUALQUIER fila en portal_cuenta_usuario para este correo
+    //    (auth_user_id es la PRIMARY KEY; la tabla no tiene columna id).
+    //    Solo es huérfano real si NO existe ninguna fila en portal_cuenta_usuario.
+    const { data: cuentasExistentes, error: ctaErr } = await supabase
+      .from('portal_cuenta_usuario')
+      .select('auth_user_id, cliente, estado')
+      .ilike('email', emailNorm)
+      .limit(1);
 
-  if (ctaErr) {
-    // Si no podemos verificar la tabla, conservamos el bloqueo seguro (no borrar usuarios a ciegas)
-    return { tieneCuentaActiva: true, huerfanoEliminado: false };
-  }
-
-  if (cuentaActiva && cuentaActiva.length > 0) {
-    return { tieneCuentaActiva: true, huerfanoEliminado: false };
-  }
-
-  // 2. No hay cuenta activa en portal_cuenta_usuario: buscar usuario huérfano en Auth y eliminarlo (AQ1-AQ3)
-  let huerfanoEliminado = false;
-  let page = 1;
-  while (page <= 10) {
-    const { data: listData, error: listErr } = await supabase.auth.admin.listUsers({
-      page,
-      perPage: 200
-    });
-    if (listErr || !listData?.users || listData.users.length === 0) break;
-
-    const match = listData.users.find(
-      (u) => String(u.email || '').trim().toLowerCase() === emailNorm
-    );
-    if (match) {
-      await supabase.from('portal_cuenta_usuario').delete().eq('auth_user_id', match.id);
-      const { error: delErr } = await supabase.auth.admin.deleteUser(match.id);
-      if (!delErr) {
-        huerfanoEliminado = true;
-      }
-      break;
+    if (ctaErr) {
+      const detalle = ctaErr.message || String(ctaErr);
+      console.error(
+        `[portal/supabase_admin] fallo al consultar portal_cuenta_usuario en autolimpieza correo=${emailNorm}: ${detalle}`
+      );
+      // No borrar usuarios a ciegas, pero reportar el fallo sin ocultar ni romper el flujo
+      return { tieneCuentaActiva: false, huerfanoEliminado: false, errorLimpieza: detalle };
     }
-    if (listData.users.length < 200) break;
-    page++;
-  }
 
-  return { tieneCuentaActiva: false, huerfanoEliminado };
+    if (cuentasExistentes && cuentasExistentes.length > 0) {
+      const estado = String(cuentasExistentes[0].estado || '').trim();
+      if (estado === 'activa') {
+        return { tieneCuentaActiva: true, estadoCuenta: 'activa', huerfanoEliminado: false };
+      }
+      // Existe fila con otro estado (ej. suspendida / pendiente): NO borrar nada
+      return {
+        tieneCuentaActiva: false,
+        estadoCuenta: estado || 'inactiva',
+        huerfanoEliminado: false
+      };
+    }
+
+    // 2. No existe ninguna fila en portal_cuenta_usuario: huérfano real en Auth -> eliminarlo (AQ1-AQ3)
+    let huerfanoEliminado = false;
+    let errorLimpieza: string | undefined;
+    let page = 1;
+    while (page <= 10) {
+      const { data: listData, error: listErr } = await supabase.auth.admin.listUsers({
+        page,
+        perPage: 200
+      });
+      if (listErr) {
+        errorLimpieza = listErr.message || String(listErr);
+        console.error(
+          `[portal/supabase_admin] fallo listUsers en autolimpieza correo=${emailNorm}: ${errorLimpieza}`
+        );
+        break;
+      }
+      if (!listData?.users || listData.users.length === 0) break;
+
+      const match = listData.users.find(
+        (u) => String(u.email || '').trim().toLowerCase() === emailNorm
+      );
+      if (match) {
+        const { error: delErr } = await supabase.auth.admin.deleteUser(match.id);
+        if (delErr) {
+          const detalle = delErr.message || String(delErr);
+          console.error(
+            `[portal/supabase_admin] fallo deleteUser en autolimpieza auth_user_id=${match.id}: ${detalle}`
+          );
+          errorLimpieza = detalle;
+        } else {
+          huerfanoEliminado = true;
+        }
+        break;
+      }
+      if (listData.users.length < 200) break;
+      page++;
+    }
+
+    return {
+      tieneCuentaActiva: false,
+      huerfanoEliminado,
+      ...(errorLimpieza ? { errorLimpieza } : {})
+    };
+  } catch (err: any) {
+    const detalle = err?.message || String(err);
+    console.error(
+      `[portal/supabase_admin] error inesperado en autolimpieza de huérfano correo=${emailNorm}: ${detalle}`
+    );
+    return { tieneCuentaActiva: false, huerfanoEliminado: false, errorLimpieza: detalle };
+  }
 }
 
 export async function createSupabaseUserWithConfirmation(params: {
@@ -84,9 +128,10 @@ export async function createSupabaseUserWithConfirmation(params: {
   telefono: string;
   emailRedirectTo?: string;
   supabaseClient?: SupabaseClient;
-}): Promise<{ ok: boolean; status: number; userId?: string; error?: string }> {
+}): Promise<{ ok: boolean; status: number; userId?: string; error?: string; errorLimpieza?: string }> {
   try {
     const supabase = params.supabaseClient ?? getServiceClient();
+    let errorLimpieza: string | undefined;
     let { data: created, error: createErr } = await supabase.auth.admin.createUser({
       email: params.email,
       password: params.password,
@@ -106,11 +151,21 @@ export async function createSupabaseUserWithConfirmation(params: {
 
       if (isDuplicate) {
         const check = await limpiarUsuarioAuthHuerfanoSiNoTieneCuenta(supabase, params.email);
+        if (check.errorLimpieza) {
+          errorLimpieza = check.errorLimpieza;
+        }
         if (check.tieneCuentaActiva) {
           return {
             ok: false,
             status: 409,
             error: 'Este correo ya tiene cuenta, inicia sesión'
+          };
+        }
+        if (check.estadoCuenta) {
+          return {
+            ok: false,
+            status: 409,
+            error: `Tu cuenta está ${check.estadoCuenta}: inicia sesión o contacta a soporte.`
           };
         }
         if (check.huerfanoEliminado) {
@@ -131,10 +186,20 @@ export async function createSupabaseUserWithConfirmation(params: {
 
       if (createErr || !created?.user) {
         const retryMsg = String(createErr?.message || msg);
+        if (isDuplicate) {
+          const motivo = errorLimpieza || 'no se pudo eliminar el usuario huérfano previo en Auth';
+          return {
+            ok: false,
+            status: 502,
+            error: `Fallo en limpieza de cuenta previa: ${motivo}`,
+            errorLimpieza: motivo
+          };
+        }
         return {
           ok: false,
-          status: isDuplicate ? 409 : 502,
-          error: isDuplicate ? 'Este correo ya tiene cuenta, inicia sesión' : retryMsg
+          status: 502,
+          error: retryMsg,
+          ...(errorLimpieza ? { errorLimpieza } : {})
         };
       }
     }
@@ -158,7 +223,8 @@ export async function createSupabaseUserWithConfirmation(params: {
     return {
       ok: true,
       status: 201,
-      userId: created.user.id
+      userId: created.user.id,
+      ...(errorLimpieza ? { errorLimpieza } : {})
     };
   } catch (err: any) {
     return {
