@@ -3,11 +3,12 @@ import {
   crearProformaAltaSentinel,
   obtenerDatosFiscalesSentinel,
   verificarTokenFichaAlta
-} from '../../../../lib/sentinel_fiscales';
+} from '../../../../lib/sentinel_fiscales.ts';
 
 /**
  * CN4: Consulta el registro de alta y garantiza la creación idempotente de la proforma
- * al confirmar el alta. Si falla, expone el motivo real en `error`.
+ * al confirmar el alta. Distingue espera legítima (404 mientras termina el registro en
+ * facturación) de un fallo real.
  */
 export const GET: APIRoute = async ({ url }) => {
   const token = url.searchParams.get('token');
@@ -34,9 +35,12 @@ export const GET: APIRoute = async ({ url }) => {
         plan_slug: payload.plan_slug || null,
         registro_alta: null,
         factura_pendiente: null,
-        error: esperando
+        motivo: esperando
           ? 'Tu alta aún no termina de registrarse en facturación.'
-          : (res.error || 'No se pudo consultar tu cuenta en facturación')
+          : (res.error || 'No se pudo consultar tu cuenta en facturación.'),
+        error: esperando
+          ? null
+          : (res.error || 'No se pudo consultar tu cuenta en facturación.')
       }),
       { status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } }
     );
@@ -78,15 +82,17 @@ export const GET: APIRoute = async ({ url }) => {
         res.registro_alta.paquete_precio !== null &&
         Number(res.registro_alta.paquete_precio) > 0)
   );
+  const esperando = !tieneDatosPago && !proformaError;
 
   return new Response(
     JSON.stringify({
       ok: true,
       lista: tieneDatosPago,
-      esperando: false,
+      esperando,
       plan_slug: payload.plan_slug || res.registro_alta?.plan_slug || null,
       registro_alta: res.registro_alta ?? null,
       factura_pendiente: facturaPendiente,
+      motivo: proformaError || (esperando ? 'Tu alta aún no termina de registrarse en facturación.' : null),
       error: proformaError
     }),
     { status: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } }
