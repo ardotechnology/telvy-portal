@@ -1,98 +1,16 @@
 ---
 import { cerrarSesionPortal } from '../lib/session_cleanup';
-import {
-  crearProformaAltaSentinel,
-  obtenerDatosFiscalesSentinel,
-  verificarTokenFichaAlta,
-  type FacturaPendienteAlta,
-  type RegistroAltaInfo
-} from '../lib/sentinel_fiscales';
 
 // AM1: defensa en profundidad — al aterrizar en /alta-confirmada nunca dejar sesión ajena abierta
 await cerrarSesionPortal(Astro);
 
 const estado = Astro.url.searchParams.get('estado') || 'error';
 const correo = (Astro.url.searchParams.get('correo') || '').trim();
-const fichaToken = (Astro.url.searchParams.get('ficha_token') || '').trim();
 const motivo =
   Astro.url.searchParams.get('motivo') ||
   'El enlace de confirmación es inválido, ya fue usado o expiró.';
 const esExito = estado === 'ok';
 const loginHref = correo ? `/login?email=${encodeURIComponent(correo)}` : '/login';
-
-let registroAlta: RegistroAltaInfo | null = null;
-let facturaPendiente: FacturaPendienteAlta | null = null;
-let facturaError: string | null = null;
-let planSlug: string | null = null;
-let debeConsultarEnCliente = false;
-
-if (esExito && fichaToken) {
-  const tokenPayload = verificarTokenFichaAlta(fichaToken);
-  if (tokenPayload) {
-    planSlug = tokenPayload.plan_slug || null;
-    // CN4: Consultar el alta y crear la proforma al confirmar si aún no existe (idempotente)
-    const res = await obtenerDatosFiscalesSentinel({
-      servidor: tokenPayload.servidor,
-      cliente_username: tokenPayload.cliente
-    });
-    if (res.ok) {
-      registroAlta = res.registro_alta ?? null;
-      facturaPendiente = res.factura_pendiente ?? null;
-      if (
-        !facturaPendiente?.ficha_pago_url &&
-        registroAlta &&
-        String(registroAlta.estado_pago_alta || '').toLowerCase() !== 'pagado' &&
-        registroAlta.paquete_precio !== null &&
-        Number(registroAlta.paquete_precio) > 0
-      ) {
-        const profRes = await crearProformaAltaSentinel({
-          servidor: tokenPayload.servidor,
-          cliente_username: tokenPayload.cliente
-        });
-        if (profRes.ok && profRes.ficha_pago_url) {
-          facturaPendiente = {
-            id: String(profRes.factura_id || ''),
-            folio: String(profRes.folio || ''),
-            descripcion: profRes.descripcion || null,
-            total: Number(profRes.total ?? registroAlta.paquete_precio),
-            moneda: profRes.moneda || registroAlta.paquete_moneda || 'MXN',
-            estado_pago: 'pendiente',
-            ficha_pago_url: profRes.ficha_pago_url,
-            fecha_emision: null
-          };
-        } else {
-          facturaError = profRes.error || 'No se pudo generar la proforma de pago en facturación.';
-        }
-      }
-      const tieneImporte = Boolean(
-        facturaPendiente?.ficha_pago_url ||
-          (registroAlta && registroAlta.paquete_precio !== null && Number(registroAlta.paquete_precio) > 0)
-      );
-      if (!tieneImporte && !facturaError) {
-        debeConsultarEnCliente = true;
-      }
-    } else if (res.status !== 404) {
-      facturaError = res.error || 'No fue posible consultar tu plan en este momento.';
-    } else {
-      debeConsultarEnCliente = true;
-    }
-  }
-}
-
-const tieneDatosPago = Boolean(
-  facturaPendiente?.ficha_pago_url ||
-    (registroAlta && registroAlta.paquete_precio !== null && Number(registroAlta.paquete_precio) > 0)
-);
-const nombrePlanVisible =
-  facturaPendiente?.descripcion ||
-  registroAlta?.paquete_nombre ||
-  registroAlta?.plan_slug ||
-  planSlug ||
-  'Paquete Telvy';
-const montoVisible = facturaPendiente
-  ? facturaPendiente.total
-  : registroAlta?.paquete_precio ?? null;
-const monedaVisible = facturaPendiente?.moneda || registroAlta?.paquete_moneda || 'MXN';
 ---
 <!DOCTYPE html>
 <html lang="es">
@@ -102,24 +20,13 @@ const monedaVisible = facturaPendiente?.moneda || registroAlta?.paquete_moneda |
     <title>{esExito ? 'Correo confirmado — Telvy' : 'Confirmación de correo — Telvy'}</title>
     <style>
       body { font-family: system-ui, -apple-system, sans-serif; background: #f8fafc; color: #0f172a; margin: 0; display: grid; place-items: center; min-height: 100vh; padding: 1.5rem; }
-      .card { max-width: 500px; width: 100%; background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 2rem; box-shadow: 0 10px 25px rgba(15, 23, 42, 0.06); }
+      .card { max-width: 480px; width: 100%; background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 2rem; box-shadow: 0 10px 25px rgba(15, 23, 42, 0.06); }
       h1 { font-size: 1.35rem; margin: 0 0 0.75rem; }
-      p { color: #475569; line-height: 1.55; margin: 0 0 1.15rem; }
+      p { color: #475569; line-height: 1.55; margin: 0 0 1.25rem; }
       .btn { display: inline-block; background: #0f172a; color: #fff; text-decoration: none; border: none; border-radius: 8px; padding: 0.75rem 1.25rem; font-weight: 600; cursor: pointer; font-size: 0.95rem; text-align: center; }
-      .btn-pay { background: #059669; }
-      .btn-pay:hover { background: #047857; }
-      .btn-secondary { background: #fff; color: #0f172a; border: 1px solid #cbd5e1; }
-      .btn-secondary:hover { background: #f8fafc; }
+      .btn:hover { background: #1e293b; }
       .btn:disabled { opacity: 0.6; cursor: not-allowed; }
       .actions { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-top: 1rem; }
-      .ficha-box { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 1rem 1.15rem; margin: 1rem 0 1.25rem; }
-      .ficha-box h2 { font-size: 0.95rem; margin: 0 0 0.4rem; color: #065f46; }
-      .ficha-monto { font-size: 1.5rem; font-weight: 700; color: #0f172a; margin: 0.35rem 0 0.5rem; font-variant-numeric: tabular-nums; }
-      .ficha-desc { font-size: 0.88rem; color: #334155; margin: 0 0 0.5rem; }
-      .ficha-nota { font-size: 0.85rem; color: #047857; margin: 0.65rem 0 0; font-weight: 500; }
-      .ficha-wait { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 1rem 1.15rem; margin: 1rem 0 1.25rem; font-size: 0.9rem; color: #334155; }
-      .ficha-error { background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; padding: 1rem 1.15rem; margin: 1rem 0 1.25rem; font-size: 0.88rem; color: #92400e; }
-      .pay-err { color: #b91c1c; font-size: 0.85rem; margin-top: 0.5rem; display: none; }
       input { width: 100%; box-sizing: border-box; padding: 0.7rem 0.85rem; border: 1px solid #cbd5e1; border-radius: 8px; margin-bottom: 0.75rem; font-size: 0.95rem; }
       .msg { margin-top: 0.75rem; font-size: 0.9rem; }
     </style>
@@ -134,282 +41,13 @@ const monedaVisible = facturaPendiente?.moneda || registroAlta?.paquete_moneda |
     <main class="card">
       {esExito ? (
         <>
-          <h1 id="altaTitulo">
-            {tieneDatosPago && montoVisible !== null ? '¡Correo confirmado!' : 'Correo confirmado'}
-          </h1>
-          <p id="altaIntro">
-            {tieneDatosPago && montoVisible !== null
-              ? 'Tu cuenta quedó confirmada y pendiente de pago. Para activar tu línea, realiza el pago de tu plan elegido.'
-              : debeConsultarEnCliente
-                ? 'Estamos terminando de registrar tu alta. En un momento podrás generar tu ficha de pago.'
-                : facturaError
-                  ? 'Tu correo fue confirmado, pero todavía no pudimos mostrar tu ficha de pago aquí.'
-                  : 'Inicia sesión en tu portal para ver tu plan y generar tu ficha de pago.'}
+          <h1>¡Correo confirmado!</h1>
+          <p>
+            Tu correo quedó confirmado. Inicia sesión en tu portal para acceder a tu cuenta y completar tu pago.
           </p>
-
-          <div id="fichaPagoContenedor">
-            {tieneDatosPago && montoVisible !== null ? (
-              <div class="ficha-box">
-                <h2>Plan elegido · Pendiente de pago</h2>
-                <div class="ficha-desc">{nombrePlanVisible}</div>
-                <div class="ficha-monto">
-                  ${Number(montoVisible).toFixed(2)} {monedaVisible}
-                </div>
-                {facturaPendiente?.ficha_pago_url ? (
-                  <a
-                    href={facturaPendiente.ficha_pago_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="btn btn-pay"
-                  >
-                    Pagar
-                  </a>
-                ) : (
-                  <button type="button" id="btnGenerarYPagar" class="btn btn-pay">
-                    Pagar
-                  </button>
-                )}
-                <div id="payErr" class="pay-err"></div>
-                <p class="ficha-nota">
-                  En cuanto se acredite el pago, tu servicio queda activo.
-                </p>
-              </div>
-            ) : facturaError ? (
-              <div class="ficha-error">
-                <strong>Tu ficha de pago aún no está disponible aquí.</strong>
-                <div style="margin-top: 0.35rem;">Motivo: {facturaError}</div>
-                <div class="actions" style="margin-top: 0.85rem;">
-                  {fichaToken && (
-                    <button type="button" id="btnReintentarFicha" class="btn">Reintentar</button>
-                  )}
-                  <a href={loginHref} class="btn btn-secondary">Entrar al portal para generar mi ficha</a>
-                </div>
-                <div style="margin-top: 0.65rem;">
-                  Soporte: <a href="mailto:soporte@telvy.net" style="color: #92400e; font-weight: 600;">soporte@telvy.net</a>
-                </div>
-              </div>
-            ) : debeConsultarEnCliente ? (
-              <div class="ficha-wait" id="fichaPagoEstado">
-                <div>Estamos terminando de registrar tu alta. En un momento podrás generar tu ficha de pago.</div>
-                <div class="actions" style="margin-top: 0.85rem;">
-                  <button type="button" id="btnReintentarFicha" class="btn btn-secondary">Reintentar ahora</button>
-                </div>
-              </div>
-            ) : (
-              <div class="ficha-wait">
-                Inicia sesión en tu portal para ver tu plan y generar tu ficha de pago. En cuanto se acredite el pago, tu servicio queda activo.
-              </div>
-            )}
+          <div class="actions">
+            <a href={loginHref} class="btn">Entrar al portal</a>
           </div>
-
-          <div class="actions" id="accionesBase">
-            <a href={loginHref} class="btn btn-secondary">Ir a iniciar sesión</a>
-          </div>
-
-          <script is:inline define:vars={{ fichaToken, planSlug, debeConsultarEnCliente, loginHref }}>
-            (function () {
-              const contenedor = document.getElementById('fichaPagoContenedor');
-              const tituloEl = document.getElementById('altaTitulo');
-              const introEl = document.getElementById('altaIntro');
-              if (!contenedor) return;
-
-              function escapeHtml(str) {
-                return String(str || '')
-                  .replace(/&/g, '&amp;')
-                  .replace(/</g, '&lt;')
-                  .replace(/>/g, '&gt;')
-                  .replace(/"/g, '&quot;');
-              }
-
-              async function iniciarPagoOnDemand(btn, errEl) {
-                if (!fichaToken) return;
-                btn.disabled = true;
-                const textoOriginal = btn.textContent;
-                btn.textContent = 'Preparando pago...';
-                if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 15000);
-                try {
-                  const r = await fetch('/api/publico/alta/pagar', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ token: fichaToken }),
-                    signal: controller.signal
-                  });
-                  clearTimeout(timeoutId);
-                  const d = await r.json().catch(() => ({}));
-                  if (r.ok && d.ok && d.ficha_pago_url) {
-                    window.open(d.ficha_pago_url, '_blank', 'noopener,noreferrer');
-                    btn.textContent = 'Abrir ficha de pago';
-                    btn.disabled = false;
-                    return;
-                  }
-                  if (errEl) {
-                    const causa = d.error || ('HTTP ' + r.status + ': no se pudo generar la proforma de pago');
-                    errEl.textContent = 'No se pudo generar tu proforma de pago (' + causa + '). Contacta a soporte@telvy.net.';
-                    errEl.style.display = 'block';
-                  }
-                } catch (err) {
-                  clearTimeout(timeoutId);
-                  if (errEl) {
-                    const causa = err && err.name === 'AbortError'
-                      ? 'tiempo de espera agotado al contactar facturación'
-                      : ((err && err.message) || 'error de conexión');
-                    errEl.textContent = 'No se pudo generar tu proforma de pago (' + causa + '). Contacta a soporte@telvy.net.';
-                    errEl.style.display = 'block';
-                  }
-                }
-                btn.textContent = textoOriginal;
-                btn.disabled = false;
-              }
-
-              function enlazarBotonPagar() {
-                const btn = document.getElementById('btnGenerarYPagar');
-                const errEl = document.getElementById('payErr');
-                if (btn) {
-                  btn.addEventListener('click', () => iniciarPagoOnDemand(btn, errEl));
-                }
-              }
-
-              enlazarBotonPagar();
-
-              // Polling automático cada 3 s hasta ~45 s (15 intentos) mientras Sentinel termina de registrar el alta
-              const INTERVALO_MS = 3000;
-              const MAX_INTENTOS = 15;
-              let pollTimer = null;
-              let intentos = 0;
-              let consultando = false;
-              let ultimoMotivo = 'Tu alta aún no termina de registrarse en facturación.';
-
-              function renderEstadoEspera() {
-                if (tituloEl) tituloEl.textContent = 'Correo confirmado';
-                if (introEl) {
-                  introEl.textContent =
-                    'Estamos terminando de registrar tu alta. En un momento podrás generar tu ficha de pago.';
-                }
-                contenedor.innerHTML =
-                  '<div class="ficha-wait" id="fichaPagoEstado">' +
-                  '<div>Estamos terminando de registrar tu alta. En un momento podrás generar tu ficha de pago.</div>' +
-                  '<div class="actions" style="margin-top: 0.85rem;">' +
-                  '<button type="button" id="btnReintentarFicha" class="btn btn-secondary">Reintentar ahora</button>' +
-                  '</div>' +
-                  '</div>';
-                enlazarReintento();
-              }
-
-              function renderEstadoPendienteConSalidas(motivoTexto) {
-                if (tituloEl) tituloEl.textContent = 'Correo confirmado';
-                if (introEl) {
-                  introEl.textContent =
-                    'Tu correo fue confirmado, pero todavía no pudimos mostrar tu ficha de pago aquí.';
-                }
-                contenedor.innerHTML =
-                  '<div class="ficha-error">' +
-                  '<strong>Tu ficha de pago aún no está disponible aquí.</strong>' +
-                  '<div style="margin-top: 0.35rem;">Motivo: ' + escapeHtml(motivoTexto) + '</div>' +
-                  '<div class="actions" style="margin-top: 0.85rem;">' +
-                  '<button type="button" id="btnReintentarFicha" class="btn">Reintentar</button>' +
-                  '<a href="' + escapeHtml(loginHref) + '" class="btn btn-secondary">Entrar al portal para generar mi ficha</a>' +
-                  '</div>' +
-                  '<div style="margin-top: 0.65rem;">Soporte: <a href="mailto:soporte@telvy.net" style="color: #92400e; font-weight: 600;">soporte@telvy.net</a></div>' +
-                  '</div>';
-                enlazarReintento();
-              }
-
-              function renderFichaLista(d) {
-                const f = d.factura_pendiente;
-                const reg = d.registro_alta;
-                const desc =
-                  (f && f.descripcion) ||
-                  (reg && (reg.paquete_nombre || reg.plan_slug)) ||
-                  (planSlug ? 'Paquete ' + planSlug : 'Paquete Telvy');
-                const totalNum = f ? Number(f.total || 0) : Number((reg && reg.paquete_precio) || 0);
-                const moneda = (f && f.moneda) || (reg && reg.paquete_moneda) || 'MXN';
-                const accionHtml = f && f.ficha_pago_url
-                  ? '<a href="' + escapeHtml(f.ficha_pago_url) + '" target="_blank" rel="noopener noreferrer" class="btn btn-pay">Pagar</a>'
-                  : '<button type="button" id="btnGenerarYPagar" class="btn btn-pay">Pagar</button>';
-                const errorInline = d.error
-                  ? '<div id="payErr" class="pay-err" style="display:block;">No se pudo generar tu proforma (' + escapeHtml(d.error) + '). Contacta a soporte@telvy.net.</div>'
-                  : '<div id="payErr" class="pay-err"></div>';
-
-                if (tituloEl) tituloEl.textContent = '¡Correo confirmado!';
-                if (introEl) {
-                  introEl.textContent =
-                    'Tu cuenta quedó confirmada y pendiente de pago. Para activar tu línea, realiza el pago de tu plan elegido.';
-                }
-                contenedor.innerHTML =
-                  '<div class="ficha-box">' +
-                  '<h2>Plan elegido · Pendiente de pago</h2>' +
-                  '<div class="ficha-desc">' + escapeHtml(desc) + '</div>' +
-                  '<div class="ficha-monto">$' + escapeHtml(totalNum.toFixed(2) + ' ' + moneda) + '</div>' +
-                  accionHtml +
-                  errorInline +
-                  '<p class="ficha-nota">En cuanto se acredite el pago, tu servicio queda activo.</p>' +
-                  '</div>';
-                enlazarBotonPagar();
-              }
-
-              async function consultar() {
-                if (!fichaToken || consultando) return;
-                consultando = true;
-                intentos++;
-                try {
-                  const r = await fetch('/api/publico/alta/ficha-pago?token=' + encodeURIComponent(fichaToken), {
-                    cache: 'no-store'
-                  });
-                  const d = await r.json().catch(() => ({}));
-                  if (d && (d.motivo || d.error)) {
-                    ultimoMotivo = String(d.motivo || d.error);
-                  } else if (!r.ok) {
-                    ultimoMotivo = 'HTTP ' + r.status + ' al consultar facturación.';
-                  }
-                  if (r.ok && d.ok && d.lista) {
-                    consultando = false;
-                    renderFichaLista(d);
-                    return;
-                  }
-                  // Si no es espera legítima (404), mostrar inmediatamente el motivo y las dos salidas
-                  if (r.ok && d.ok && d.esperando === false && d.error) {
-                    consultando = false;
-                    renderEstadoPendienteConSalidas(ultimoMotivo);
-                    return;
-                  }
-                } catch (err) {
-                  ultimoMotivo = (err && err.message) || 'Error de conexión al consultar facturación.';
-                }
-                consultando = false;
-
-                if (intentos < MAX_INTENTOS) {
-                  pollTimer = setTimeout(consultar, INTERVALO_MS);
-                } else {
-                  renderEstadoPendienteConSalidas(ultimoMotivo);
-                }
-              }
-
-              function reiniciarConsulta() {
-                if (pollTimer) {
-                  clearTimeout(pollTimer);
-                  pollTimer = null;
-                }
-                intentos = 0;
-                renderEstadoEspera();
-                consultar();
-              }
-
-              function enlazarReintento() {
-                const btn = document.getElementById('btnReintentarFicha');
-                if (btn) {
-                  btn.addEventListener('click', reiniciarConsulta);
-                }
-              }
-
-              enlazarReintento();
-
-              if (debeConsultarEnCliente && fichaToken) {
-                pollTimer = setTimeout(consultar, INTERVALO_MS);
-              }
-            })();
-          </script>
         </>
       ) : (
         <>
