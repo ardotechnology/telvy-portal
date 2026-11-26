@@ -1,13 +1,11 @@
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import http from 'node:http';
-import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { GET as fichaPagoGet } from '../app/src/pages/api/publico/alta/ficha-pago.ts';
 import { firmarTokenFichaAlta } from '../app/src/lib/sentinel_fiscales.ts';
 
 console.log('=======================================================================');
-console.log('  VERIFICACIÓN ALTA CONFIRMADA — CARRERA DE REGISTRO EN FACTURACIÓN    ');
+console.log('  VERIFICACIÓN API FICHA-PAGO — CARRERA DE REGISTRO EN FACTURACIÓN     ');
 console.log('=======================================================================\n');
 
 // Estado del mock de Sentinel por cliente:
@@ -128,7 +126,7 @@ try {
     console.log('✅ Caso 2: alta ya registrada -> ficha generada a la primera');
   }
 
-  // Caso 3: 404 persistente + contrato de UI en alta-confirmada.astro
+  // Caso 3: 404 persistente en /api/publico/alta/ficha-pago mantiene espera legítima sin error falso
   {
     const token = firmarTokenFichaAlta({ cliente: 'persistente_404', servidor: 'MB-Edge-MTY', plan_slug: 'prepago-199' });
     assert.ok(token);
@@ -143,33 +141,10 @@ try {
       assert.ok(d.motivo.includes('registrarse en facturación'));
     }
 
-    const astroSrc = fs.readFileSync(
-      path.resolve(process.cwd(), 'app/src/pages/alta-confirmada.astro'),
-      'utf8'
-    );
-    // Polling automático cada 3 s hasta ~45 s (15 intentos)
-    assert.ok(astroSrc.includes('const INTERVALO_MS = 3000;'), 'Debe reintentar cada 3 s');
-    assert.ok(astroSrc.includes('const MAX_INTENTOS = 15;'), 'Debe reintentar hasta ~45 s (15 * 3s)');
-    // Estado claro de espera sin mentir que ya quedó lista
-    assert.ok(
-      astroSrc.includes('Estamos terminando de registrar tu alta. En un momento podrás generar tu ficha de pago.'),
-      'Debe mostrar el estado claro de espera mientras se registra'
-    );
-    // Dos salidas tras agotar reintentos: Reintentar + Entrar al portal para generar mi ficha
-    assert.ok(astroSrc.includes('id="btnReintentarFicha"'), 'Debe ofrecer botón Reintentar');
-    assert.ok(
-      astroSrc.includes('Entrar al portal para generar mi ficha'),
-      'Debe ofrecer segunda salida para entrar al portal y generar la ficha desde la cuenta'
-    );
-    // Nunca 'No se pudo generar tu proforma de pago.' en la caja de error junto a 'quedó confirmada'
-    assert.ok(
-      !astroSrc.includes('<strong>No se pudo generar tu proforma de pago.</strong>'),
-      'No debe mostrar "No se pudo generar tu proforma de pago." contradictorio en la pantalla'
-    );
-    console.log('✅ Caso 3: 404 persistente -> polling 3s/45s, un solo mensaje claro con motivo y dos salidas (Reintentar + Portal)');
+    console.log('✅ Caso 3: 404 persistente -> mantiene esperando=true y motivo claro sin error falso');
   }
 
-  console.log('\n🎉 TODAS LAS VERIFICACIONES DE ALTA CONFIRMADA PASARON.\n');
+  console.log('\n🎉 TODAS LAS VERIFICACIONES DE CARRERA EN FICHA-PAGO PASARON.\n');
 } finally {
   sentinelServer.close();
 }

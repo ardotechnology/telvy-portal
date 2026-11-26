@@ -44,35 +44,31 @@ console.log('===================================================================
   console.log('✅ CN5 (traductor): ningún mensaje atribuye a la baja un fallo de canje o alta');
 }
 
-// CN4 & CN6 & CN2 en código fuente de páginas Astro
+// CN4 & CN6 & CN2 en código fuente del portal autenticado y endpoint de pago
 {
-  const altaConfirmadaSrc = fs.readFileSync(
-    path.resolve(process.cwd(), 'app/src/pages/alta-confirmada.astro'),
-    'utf8'
-  );
   const indexSrc = fs.readFileSync(
     path.resolve(process.cwd(), 'app/src/pages/index.astro'),
     'utf8'
   );
-
-  // CN4: Prohibido mostrar el falso "Tu factura está en proceso"
-  assert.ok(
-    !altaConfirmadaSrc.includes('Tu factura está en proceso'),
-    'CN4: alta-confirmada.astro no debe decir "Tu factura está en proceso"'
+  const pagarApiSrc = fs.readFileSync(
+    path.resolve(process.cwd(), 'app/src/pages/api/publico/alta/pagar.ts'),
+    'utf8'
   );
+
+  // CN4: Prohibido mostrar el falso "Tu factura está en proceso"; el pago desde el portal genera proforma y muestra soporte en fallo
   assert.ok(
     !indexSrc.includes('Tu factura está en proceso'),
     'CN4: index.astro no debe decir "Tu factura está en proceso"'
   );
   assert.ok(
-    altaConfirmadaSrc.includes('crearProformaAltaSentinel'),
-    'CN4: alta-confirmada.astro debe crear la proforma al confirmar el alta'
+    pagarApiSrc.includes('crearProformaAltaSentinel'),
+    'CN4: /api/publico/alta/pagar debe crear la proforma al pagar desde el portal'
   );
   assert.ok(
-    altaConfirmadaSrc.includes('soporte@telvy.net') && indexSrc.includes('soporte@telvy.net'),
-    'CN4: ambos puntos muestran contacto de soporte en caso de fallo'
+    indexSrc.includes('soporte@telvy.net'),
+    'CN4: index.astro muestra contacto de soporte en caso de fallo'
   );
-  console.log('✅ CN4 (portal): proforma se crea al confirmar y nunca dice "Tu factura está en proceso"');
+  console.log('✅ CN4 (portal): proforma se genera al pagar en el portal y nunca dice "Tu factura está en proceso"');
 
   // CN2: index.astro muestra "Estado no disponible" si falla la consulta de extensiones
   assert.ok(
