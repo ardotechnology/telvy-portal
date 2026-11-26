@@ -1067,10 +1067,10 @@ const fiscalEsFisica = fiscalTipoPersona === 'fisica';
 
     <!-- BLOQUE: DATOS FISCALES -->
     <section class="card" id="seccion-datos-fiscales">
-      <div class="fiscal-header">
+        <div class="fiscal-header">
         <div>
           <h2 class="card-title">Datos fiscales</h2>
-          <p class="card-desc">Información para la emisión de tus facturas CFDI 4.0.</p>
+          <p class="card-desc">Información para la emisión de tus facturas CFDI 4.0. Los cambios aplican a las próximas facturas; las ya emitidas conservan los datos con los que se generaron.</p>
         </div>
         <span
           id="fiscalStatusPill"
@@ -1434,6 +1434,27 @@ const fiscalEsFisica = fiscalTipoPersona === 'fisica';
               fiscalFeedback.textContent = data.error || `Error guardando datos fiscales (HTTP ${res.status})`;
             }
             return;
+          }
+
+          if (data.cliente) {
+            const cli = data.cliente;
+            if (fiscalTipoPersonaSelect && (cli.tipo_persona === 'fisica' || cli.tipo_persona === 'moral')) {
+              fiscalTipoPersonaSelect.value = cli.tipo_persona;
+              sincronizarCamposTipoPersona();
+            }
+            const setInputVal = (id: string, val: unknown) => {
+              const el = document.getElementById(id) as HTMLInputElement | null;
+              if (el && typeof val === 'string') el.value = val;
+            };
+            setInputVal('fiscal_rfc', cli.rfc);
+            setInputVal('fiscal_razon_social', cli.razon_social);
+            setInputVal('fiscal_nombres', cli.nombres ?? '');
+            setInputVal('fiscal_apellidos', cli.apellidos ?? '');
+            setInputVal('fiscal_nombre_comercial', cli.nombre_comercial ?? '');
+            setInputVal('fiscal_regimen_fiscal', cli.regimen_fiscal ?? '');
+            setInputVal('fiscal_codigo_postal', cli.codigo_postal ?? '');
+            setInputVal('fiscal_uso_cfdi_sat', cli.uso_cfdi_sat ?? '');
+            setInputVal('fiscal_correo_facturacion', cli.correo_facturacion ?? '');
           }
 
           if (fiscalFeedback) {
