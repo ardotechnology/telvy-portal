@@ -77,15 +77,16 @@ console.log('===================================================================
   );
   console.log('✅ CN2 (portal): index.astro muestra Estado no disponible si el conmutador no responde');
 
-  // CN6: index.astro desactiva pendienteDePago cuando hay saldo > 0 y oculta avisoSaldoCero tras canje
+  // CN6: index.astro usa el estado real del pago (no el saldo) y oculta avisoSaldoCero / bannerFacturaPendiente tras canje acreditado
   assert.ok(
-    indexSrc.includes('tieneSaldoPositivo') &&
-      indexSrc.includes('!tieneSaldoPositivo') &&
+    indexSrc.includes('resolverEstadoPagoPortal') &&
+      !indexSrc.includes('tieneSaldoPositivo') &&
       indexSrc.includes('id="avisoSaldoCero"') &&
-      indexSrc.includes("document.getElementById('avisoSaldoCero')"),
-    'CN6: index.astro debe ocultar aviso de saldo 0 y pendiente de pago en cuanto haya saldo'
+      indexSrc.includes("document.getElementById('avisoSaldoCero')") &&
+      indexSrc.includes("document.getElementById('bannerFacturaPendiente')"),
+    'CN6: index.astro debe basarse en el estado real del pago y ocultar los avisos al acreditarse el canje'
   );
-  console.log('✅ CN6 (portal): tras un canje se oculta el aviso de saldo 0 y el banner de pendiente de pago');
+  console.log('✅ CN6 (portal): el aviso depende del estado real del pago y se oculta al acreditarse el canje');
 }
 
 console.log('\n🎉 TODAS LAS VERIFICACIONES DEL PORTAL (CN2, CN4, CN5, CN6) PASARON.\n');
