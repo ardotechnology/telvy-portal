@@ -3,9 +3,14 @@ import crypto from 'node:crypto';
 export const SENTINEL_URL_DEFAULT = 'https://sentinel.ardo.group';
 export const TELVY_DEFAULT_SERVIDOR = 'MB-Edge-MTY';
 
+export type TipoPersonaFiscal = 'moral' | 'fisica' | 'no_especificado';
+
 export interface DatosFiscalesFicha {
   id: string;
   rfc: string;
+  tipo_persona?: TipoPersonaFiscal | string | null;
+  nombres?: string | null;
+  apellidos?: string | null;
   razon_social: string;
   nombre_comercial: string | null;
   regimen_fiscal: string | null;
@@ -19,7 +24,10 @@ export interface DatosFiscalesFicha {
 
 export interface DatosFiscalesFormInput {
   rfc: string;
-  razon_social: string;
+  tipo_persona?: 'moral' | 'fisica' | 'no_especificado' | '';
+  nombres?: string;
+  apellidos?: string;
+  razon_social?: string;
   nombre_comercial?: string;
   regimen_fiscal: string;
   codigo_postal: string;
@@ -240,6 +248,29 @@ export async function guardarDatosFiscalesSentinel(
   }
 
   const servidor = (params.servidor || process.env.TELVY_DEFAULT_SERVIDOR || TELVY_DEFAULT_SERVIDOR).trim();
+  const tipoPersona = String(params.tipo_persona || '').trim().toLowerCase();
+
+  const bodyPayload: Record<string, unknown> = {
+    servidor,
+    cliente_username: params.cliente_username,
+    rfc: params.rfc,
+    nombre_comercial: params.nombre_comercial ?? '',
+    regimen_fiscal: params.regimen_fiscal,
+    codigo_postal: params.codigo_postal,
+    uso_cfdi_sat: params.uso_cfdi_sat,
+    correo_facturacion: params.correo_facturacion ?? ''
+  };
+
+  if (tipoPersona === 'fisica') {
+    bodyPayload.tipo_persona = 'fisica';
+    bodyPayload.nombres = String(params.nombres ?? '').trim();
+    bodyPayload.apellidos = String(params.apellidos ?? '').trim();
+  } else if (tipoPersona === 'moral') {
+    bodyPayload.tipo_persona = 'moral';
+    bodyPayload.razon_social = String(params.razon_social ?? '').trim();
+  } else {
+    bodyPayload.razon_social = String(params.razon_social ?? '').trim();
+  }
 
   try {
     const res = await doFetch(`${baseUrl}/api/integracion/datos-fiscales`, {
@@ -248,17 +279,7 @@ export async function guardarDatosFiscalesSentinel(
         'Content-Type': 'application/json',
         Authorization: `Bearer ${key}`
       },
-      body: JSON.stringify({
-        servidor,
-        cliente_username: params.cliente_username,
-        rfc: params.rfc,
-        razon_social: params.razon_social,
-        nombre_comercial: params.nombre_comercial ?? '',
-        regimen_fiscal: params.regimen_fiscal,
-        codigo_postal: params.codigo_postal,
-        uso_cfdi_sat: params.uso_cfdi_sat,
-        correo_facturacion: params.correo_facturacion ?? ''
-      })
+      body: JSON.stringify(bodyPayload)
     });
     const data = await res.json().catch(() => ({}));
     if (res.ok && data?.ok && data?.cliente) {

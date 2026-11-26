@@ -51,9 +51,18 @@ export const POST: APIRoute = async ({ request, locals }) => {
 
   // Identidad y servidor tomados EXCLUSIVAMENTE de la sesión autenticada y del motor (P2, P3)
   const servidor = await resolverServidorClienteMotor(cliente);
+  const tipoPersonaRaw = String(body.tipo_persona ?? '').trim().toLowerCase();
+  const tipo_persona =
+    tipoPersonaRaw === 'fisica' || tipoPersonaRaw === 'moral'
+      ? tipoPersonaRaw
+      : '';
+
   const res = await guardarDatosFiscalesSentinel({
     servidor,
     cliente_username: cliente,
+    tipo_persona,
+    nombres: String(body.nombres ?? ''),
+    apellidos: String(body.apellidos ?? ''),
     rfc: String(body.rfc ?? ''),
     razon_social: String(body.razon_social ?? ''),
     nombre_comercial: String(body.nombre_comercial ?? ''),

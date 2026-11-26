@@ -166,6 +166,13 @@ const montoPendiente = estadoPagoPortal.montoPendiente;
 const monedaPendiente = estadoPagoPortal.monedaPendiente;
 const fiscalPendiente = esFichaFiscalPendiente(datosFiscales);
 const fiscalGenerico = usaRfcGenerico(datosFiscales);
+const fiscalTipoPersona =
+  datosFiscales?.tipo_persona === 'fisica'
+    ? 'fisica'
+    : datosFiscales?.tipo_persona === 'moral'
+      ? 'moral'
+      : '';
+const fiscalEsFisica = fiscalTipoPersona === 'fisica';
 ---
 
 <!DOCTYPE html>
@@ -356,7 +363,8 @@ const fiscalGenerico = usaRfcGenerico(datosFiscales);
       letter-spacing: 0.04em;
     }
 
-    .fiscal-field input {
+    .fiscal-field input,
+    .fiscal-field select {
       width: 100%;
       padding: 9px 12px;
       border: 1px solid var(--color-smoke);
@@ -366,7 +374,8 @@ const fiscalGenerico = usaRfcGenerico(datosFiscales);
       font-size: 14px;
     }
 
-    .fiscal-field input:focus {
+    .fiscal-field input:focus,
+    .fiscal-field select:focus {
       outline: 2px solid var(--color-obsidian);
       outline-offset: -1px;
     }
@@ -1103,6 +1112,15 @@ const fiscalGenerico = usaRfcGenerico(datosFiscales);
       <form id="formDatosFiscales" novalidate>
         <div class="fiscal-grid">
           <div class="fiscal-field">
+            <label for="fiscal_tipo_persona">Tipo de persona</label>
+            <select id="fiscal_tipo_persona" name="tipo_persona" required>
+              <option value="" selected={fiscalTipoPersona === ''}>Selecciona tipo de persona</option>
+              <option value="moral" selected={fiscalTipoPersona === 'moral'}>Persona Moral</option>
+              <option value="fisica" selected={fiscalTipoPersona === 'fisica'}>Persona Física</option>
+            </select>
+          </div>
+
+          <div class="fiscal-field">
             <label for="fiscal_rfc">RFC</label>
             <input
               id="fiscal_rfc"
@@ -1115,15 +1133,51 @@ const fiscalGenerico = usaRfcGenerico(datosFiscales);
             />
           </div>
 
-          <div class="fiscal-field">
+          <div
+            class="fiscal-field"
+            id="fiscalCampoRazonSocial"
+            style={fiscalEsFisica ? 'display:none;' : undefined}
+          >
             <label for="fiscal_razon_social">Razón social</label>
             <input
               id="fiscal_razon_social"
               name="razon_social"
               type="text"
-              required
-              placeholder="Nombre o razón social sin régimen societario"
+              required={!fiscalEsFisica}
+              placeholder="Razón social tal como aparece en tu CSF"
               value={datosFiscales?.razon_social || ''}
+            />
+          </div>
+
+          <div
+            class="fiscal-field"
+            id="fiscalCampoNombres"
+            style={!fiscalEsFisica ? 'display:none;' : undefined}
+          >
+            <label for="fiscal_nombres">Nombre(s)</label>
+            <input
+              id="fiscal_nombres"
+              name="nombres"
+              type="text"
+              required={fiscalEsFisica}
+              placeholder="Nombre(s) exactos según tu CSF"
+              value={datosFiscales?.nombres || ''}
+            />
+          </div>
+
+          <div
+            class="fiscal-field"
+            id="fiscalCampoApellidos"
+            style={!fiscalEsFisica ? 'display:none;' : undefined}
+          >
+            <label for="fiscal_apellidos">Apellidos</label>
+            <input
+              id="fiscal_apellidos"
+              name="apellidos"
+              type="text"
+              required={fiscalEsFisica}
+              placeholder="Apellidos exactos según tu CSF"
+              value={datosFiscales?.apellidos || ''}
             />
           </div>
 
@@ -1312,6 +1366,28 @@ const fiscalGenerico = usaRfcGenerico(datosFiscales);
     const fiscalFeedback = document.getElementById('fiscalFeedback') as HTMLDivElement | null;
     const fiscalStatusPill = document.getElementById('fiscalStatusPill') as HTMLSpanElement | null;
     const fiscalPendingAlert = document.getElementById('fiscalPendingAlert') as HTMLDivElement | null;
+    const fiscalTipoPersonaSelect = document.getElementById('fiscal_tipo_persona') as HTMLSelectElement | null;
+    const fiscalCampoRazonSocial = document.getElementById('fiscalCampoRazonSocial') as HTMLDivElement | null;
+    const fiscalCampoNombres = document.getElementById('fiscalCampoNombres') as HTMLDivElement | null;
+    const fiscalCampoApellidos = document.getElementById('fiscalCampoApellidos') as HTMLDivElement | null;
+    const fiscalInputRazonSocial = document.getElementById('fiscal_razon_social') as HTMLInputElement | null;
+    const fiscalInputNombres = document.getElementById('fiscal_nombres') as HTMLInputElement | null;
+    const fiscalInputApellidos = document.getElementById('fiscal_apellidos') as HTMLInputElement | null;
+
+    const sincronizarCamposTipoPersona = () => {
+      const esFisica = (fiscalTipoPersonaSelect?.value || '') === 'fisica';
+      if (fiscalCampoRazonSocial) fiscalCampoRazonSocial.style.display = esFisica ? 'none' : '';
+      if (fiscalCampoNombres) fiscalCampoNombres.style.display = esFisica ? '' : 'none';
+      if (fiscalCampoApellidos) fiscalCampoApellidos.style.display = esFisica ? '' : 'none';
+      if (fiscalInputRazonSocial) fiscalInputRazonSocial.required = !esFisica;
+      if (fiscalInputNombres) fiscalInputNombres.required = esFisica;
+      if (fiscalInputApellidos) fiscalInputApellidos.required = esFisica;
+    };
+
+    if (fiscalTipoPersonaSelect) {
+      fiscalTipoPersonaSelect.addEventListener('change', sincronizarCamposTipoPersona);
+      sincronizarCamposTipoPersona();
+    }
 
     if (formFiscales) {
       formFiscales.addEventListener('submit', async (ev) => {
@@ -1323,15 +1399,26 @@ const fiscalGenerico = usaRfcGenerico(datosFiscales);
         }
 
         const fd = new FormData(formFiscales);
-        const payload = {
+        const tipoPersona = String(fd.get('tipo_persona') || '').trim().toLowerCase();
+        const payload: Record<string, string> = {
           rfc: String(fd.get('rfc') || '').trim().toUpperCase(),
-          razon_social: String(fd.get('razon_social') || '').trim(),
           nombre_comercial: String(fd.get('nombre_comercial') || '').trim(),
           regimen_fiscal: String(fd.get('regimen_fiscal') || '').trim(),
           codigo_postal: String(fd.get('codigo_postal') || '').trim(),
           uso_cfdi_sat: String(fd.get('uso_cfdi_sat') || '').trim().toUpperCase(),
           correo_facturacion: String(fd.get('correo_facturacion') || '').trim()
         };
+
+        if (tipoPersona === 'fisica') {
+          payload.tipo_persona = 'fisica';
+          payload.nombres = String(fd.get('nombres') || '').trim();
+          payload.apellidos = String(fd.get('apellidos') || '').trim();
+        } else if (tipoPersona === 'moral') {
+          payload.tipo_persona = 'moral';
+          payload.razon_social = String(fd.get('razon_social') || '').trim();
+        } else {
+          payload.razon_social = String(fd.get('razon_social') || '').trim();
+        }
 
         try {
           const res = await fetch('/api/cuenta/datos-fiscales', {
