@@ -42,6 +42,36 @@ export function formatearAvisoVigencia(vigenciaDias: number | null | undefined):
   return 'La vigencia del voucher se confirma al momento de su emisión.';
 }
 
+/**
+ * Construye el texto de importes del canje dinámicamente desde el catálogo del API
+ * (nunca escribe montos a mano en la portada).
+ */
+export function formatearTextoImportesCanje(
+  denominaciones: Array<{ monto: number; moneda?: string }> | null | undefined
+): string {
+  const validas = Array.isArray(denominaciones)
+    ? denominaciones
+        .filter((d) => Number.isFinite(Number(d?.monto)) && Number(d.monto) > 0)
+        .map((d) => ({
+          monto: Number(d.monto),
+          moneda: String(d.moneda || 'MXN').trim().toUpperCase() || 'MXN'
+        }))
+    : [];
+
+  if (validas.length === 0) {
+    return 'Ingresa el código de tu tarjeta para abonar el saldo directo a tu monedero.';
+  }
+
+  const moneda = validas[0].moneda;
+  const montos = validas.map((d) => (Number.isInteger(d.monto) ? String(d.monto) : d.monto.toFixed(2)));
+  const listaTexto =
+    montos.length === 1
+      ? `${montos[0]} ${moneda}`
+      : `${montos.slice(0, -1).join(', ')} o ${montos[montos.length - 1]} ${moneda}`;
+
+  return `Ingresa el código de tu tarjeta (${listaTexto}) para abonar el saldo directo a tu monedero.`;
+}
+
 export function formatearFechaCaducidad(expiraAt: string | null | undefined): string | null {
   if (!expiraAt) return null;
   const d = new Date(String(expiraAt));

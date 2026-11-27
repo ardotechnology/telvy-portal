@@ -10,6 +10,10 @@ import {
   type FacturaPendienteAlta,
   type RegistroAltaInfo
 } from '../lib/sentinel_fiscales';
+import {
+  formatearTextoImportesCanje,
+  obtenerCatalogoRecargasSentinel
+} from '../lib/sentinel_recargas';
 
 // Verificación de sesión: el cliente se obtiene EXCLUSIVAMENTE de la sesión autenticada en el servidor.
 const cliente = Astro.locals.portalCuenta?.cliente;
@@ -111,6 +115,8 @@ const saldoReservado = saldoData?.saldo?.reservado !== undefined && saldoData?.s
   : 0;
 const tieneSaldoValido = saldoDisponible !== null && !isNaN(saldoDisponible);
 const monedaSaldo = saldoData?.moneda || 'MXN';
+const catalogoRecargasPortada = await obtenerCatalogoRecargasSentinel();
+const textoImportesCanje = formatearTextoImportesCanje(catalogoRecargasPortada.denominaciones);
 
 // Condición estricta: SOLO "no tiene servicios" (extensiones, troncales y dids activos vacíos).
 // El saldo NO interviene en la decisión.
@@ -701,8 +707,19 @@ const fiscalEsFisica = fiscalTipoPersona === 'fisica';
 
     <!-- BLOQUE 1: Saldo -->
     <section class="card">
-      <h2 class="card-title">1. Saldo</h2>
-      <p class="card-desc">Consultado en tiempo real desde la puerta para el cliente {cliente}.</p>
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 6px;">
+        <div>
+          <h2 class="card-title">1. Saldo</h2>
+          <p class="card-desc">Consultado en tiempo real desde la puerta para el cliente {cliente}.</p>
+        </div>
+        <a
+          href="/cuenta/recargas"
+          id="btnComprarSaldoPortada"
+          style="display: inline-flex; align-items: center; gap: 6px; padding: 9px 16px; background: #d97706; color: #ffffff; text-decoration: none; border-radius: 6px; font-size: 13px; font-weight: 700; white-space: nowrap;"
+        >
+          Comprar saldo →
+        </a>
+      </div>
       {errorSaldo ? (
         <div class="empty-state">
           No fue posible leer el saldo del cliente {cliente} ({errorSaldo}).
@@ -734,13 +751,30 @@ const fiscalEsFisica = fiscalTipoPersona === 'fisica';
         </div>
       )}
 
-      <!-- CA1: Canje de tarjetas de prepago -->
+      <!-- Paso 1 (Comprar) → Paso 2 (Canjear) -->
       <div style="margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--color-hairline);">
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; padding: 10px 12px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;">
+          <div>
+            <div style="font-size: 13px; font-weight: 700; color: #92400e;">
+              Paso 1 · Comprar saldo
+            </div>
+            <div style="font-size: 12px; color: #78350f;">
+              Elige una recarga prepago, págala en línea y recibe tu código al acreditarse tu pago.
+            </div>
+          </div>
+          <a
+            href="/cuenta/recargas"
+            style="font-size: 12px; font-weight: 700; color: #92400e; text-decoration: none; padding: 6px 12px; background: #ffffff; border: 1px solid #fcd34d; border-radius: 6px; white-space: nowrap;"
+          >
+            Ir a recargar saldo →
+          </a>
+        </div>
+
         <div style="font-size: 14px; font-weight: 700; color: var(--color-ink); margin-bottom: 4px;">
-          Canjear tarjeta de prepago
+          Paso 2 · Canjear tarjeta de prepago
         </div>
         <p style="font-size: 12px; color: var(--color-ash); margin-bottom: 10px;">
-          Ingresa el código de tu tarjeta (200, 300, 500 o 700 MXN) para abonar el saldo directo a tu monedero.
+          {textoImportesCanje}
         </p>
         <form id="formCanjeVoucher" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
           <input

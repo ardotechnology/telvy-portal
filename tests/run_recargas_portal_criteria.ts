@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
 
 test('PARTE 3 · portal recargas: denominaciones y vigencia_dias desde API (nada cableado), entrega autenticada, caducidad exacta y vencido sin opción de canje', async () => {
@@ -94,4 +95,49 @@ test('PARTE 3 · portal recargas: denominaciones y vigencia_dias desde API (nada
   const msgVencido = mod.formatearErrorCanjeVencido('2026-11-01T12:00:00.000Z');
   assert.match(msgVencido, /caduc/i);
   assert.match(msgVencido, /01\/11\/2026/);
+});
+
+test('portada del portal: enlaza a /cuenta/recargas junto al saldo (primero comprar, luego canjear) y los importes del canje salen del catálogo del API', async () => {
+  const mod = await import(
+    path.join(process.cwd(), 'app/src/lib/sentinel_recargas.ts')
+  );
+
+  assert.equal(
+    typeof (mod as any).formatearTextoImportesCanje,
+    'function',
+    'Debe existir formatearTextoImportesCanje en sentinel_recargas.ts'
+  );
+
+  // Importes dinámicos desde catálogo API
+  const textoCuatro = (mod as any).formatearTextoImportesCanje([
+    { monto: 200, moneda: 'MXN' },
+    { monto: 300, moneda: 'MXN' },
+    { monto: 500, moneda: 'MXN' },
+    { monto: 700, moneda: 'MXN' }
+  ]);
+  assert.match(textoCuatro, /200, 300, 500 o 700 MXN/);
+
+  const textoCustom = (mod as any).formatearTextoImportesCanje([
+    { monto: 250, moneda: 'MXN' },
+    { monto: 600, moneda: 'MXN' }
+  ]);
+  assert.match(textoCustom, /250 o 600 MXN/);
+  assert.doesNotMatch(textoCustom, /200|300|500|700/);
+
+  // La portada enlaza a /cuenta/recargas y no cablea los importes en el texto del canje
+  const indexSrc = fs.readFileSync(
+    path.join(process.cwd(), 'app/src/pages/index.astro'),
+    'utf8'
+  );
+  assert.ok(
+    indexSrc.includes('href="/cuenta/recargas"'),
+    'La portada debe tener un enlace directo a /cuenta/recargas'
+  );
+  assert.ok(
+    !indexSrc.includes('(200, 300, 500 o 700 MXN)'),
+    'La portada no debe cablear (200, 300, 500 o 700 MXN) a mano'
+  );
+  const idxComprar = indexSrc.indexOf('href="/cuenta/recargas"');
+  const idxCanjear = indexSrc.indexOf('formCanjeVoucher');
+  assert.ok(idxComprar > 0 && idxCanjear > idxComprar, 'Primero aparece Comprar saldo (/cuenta/recargas) y luego Canjear');
 });
