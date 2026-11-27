@@ -92,13 +92,19 @@ export const POST: APIRoute = async ({ request, locals }) => {
     );
   }
 
+  const portalPublicOrigin = String(process.env.PORTAL_PUBLIC_URL || 'https://portal.telvy.net')
+    .trim()
+    .replace(/\/+$/, '');
+  const volverA = `${portalPublicOrigin}/cuenta/recargas`;
+
   const res = await venderRecargaSentinel({
     clienteId,
     denominacionId,
     precioPlanCatalogo:
       body.precio_plan_catalogo !== undefined && body.precio_plan_catalogo !== null
         ? Number(body.precio_plan_catalogo)
-        : null
+        : null,
+    volverA
   });
 
   return new Response(JSON.stringify(res), {

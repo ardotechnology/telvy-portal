@@ -96,6 +96,59 @@ export function formatearErrorCanjeVencido(
   return 'Este voucher caducó y ya no puede canjearse.';
 }
 
+export function resolverMensajeVueltaPago(params: {
+  pagoParam?: string | null;
+  voucherRes?: {
+    ok: boolean;
+    status?: number;
+    codigo?: string;
+    expira_at?: string | null;
+    vencido?: boolean;
+    error?: string;
+  } | null;
+}): {
+  estado: 'aprobado' | 'cancelado' | 'en_proceso' | 'vencido';
+  mostrarCodigo: boolean;
+  codigo?: string;
+  fechaCaducidad?: string | null;
+  mensaje: string;
+} {
+  const pago = String(params.pagoParam || '').trim().toLowerCase();
+  if (pago === 'cancelado') {
+    return {
+      estado: 'cancelado',
+      mostrarCodigo: false,
+      mensaje: 'El pago fue cancelado. Tu recarga sigue pendiente de pago y puedes completarla cuando gustes.'
+    };
+  }
+
+  const vr = params.voucherRes;
+  if (vr?.ok && vr.codigo) {
+    const fechaCaducidad = formatearFechaCaducidad(vr.expira_at);
+    if (vr.vencido) {
+      return {
+        estado: 'vencido',
+        mostrarCodigo: false,
+        fechaCaducidad,
+        mensaje: formatearErrorCanjeVencido(vr.expira_at)
+      };
+    }
+    return {
+      estado: 'aprobado',
+      mostrarCodigo: true,
+      codigo: vr.codigo,
+      fechaCaducidad,
+      mensaje: 'Pago aprobado. Aquí tienes tu código de recarga.'
+    };
+  }
+
+  return {
+    estado: 'en_proceso',
+    mostrarCodigo: false,
+    mensaje: 'Pago en proceso. Tu pago aún se está acreditando; en cuanto se confirme verás tu código aquí.'
+  };
+}
+
 export function clasificarEstadoRecarga(
   recarga: { estado_visible?: string | null; estado?: string | null; expira_at?: string | null },
   now: Date = new Date()
@@ -198,7 +251,12 @@ export async function obtenerCatalogoRecargasSentinel(opts?: SentinelClientOptio
 }
 
 export async function venderRecargaSentinel(
-  params: { clienteId: string; denominacionId: string; precioPlanCatalogo?: number | null },
+  params: {
+    clienteId: string;
+    denominacionId: string;
+    precioPlanCatalogo?: number | null;
+    volverA?: string | null;
+  },
   opts?: SentinelClientOptions
 ): Promise<{
   ok: boolean;
@@ -223,7 +281,8 @@ export async function venderRecargaSentinel(
         denominacion_id: params.denominacionId,
         ...(params.precioPlanCatalogo !== undefined && params.precioPlanCatalogo !== null
           ? { precio_plan_catalogo: params.precioPlanCatalogo }
-          : {})
+          : {}),
+        ...(params.volverA ? { volver_a: params.volverA } : {})
       })
     });
     const body = (await res.json().catch(() => ({}))) as any;

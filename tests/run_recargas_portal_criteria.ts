@@ -141,3 +141,48 @@ test('portada del portal: enlaza a /cuenta/recargas junto al saldo (primero comp
   const idxCanjear = indexSrc.indexOf('formCanjeVoucher');
   assert.ok(idxComprar > 0 && idxCanjear > idxComprar, 'Primero aparece Comprar saldo (/cuenta/recargas) y luego Canjear');
 });
+
+test('vuelta al portal tras pagar: aprobado muestra código y caducidad; cancelado muestra pendiente; antes de acreditar dice pago en proceso sin código', async () => {
+  const mod = await import(
+    path.join(process.cwd(), 'app/src/lib/sentinel_recargas.ts')
+  );
+
+  assert.equal(
+    typeof (mod as any).resolverMensajeVueltaPago,
+    'function',
+    'Debe existir resolverMensajeVueltaPago en sentinel_recargas.ts'
+  );
+
+  // 1) Pago aprobado -> muestra código y caducidad
+  const okRes = (mod as any).resolverMensajeVueltaPago({
+    pagoParam: 'pagado',
+    voucherRes: {
+      ok: true,
+      codigo: '574199',
+      expira_at: '2026-12-27T12:00:00.000Z',
+      vencido: false
+    }
+  });
+  assert.equal(okRes.estado, 'aprobado');
+  assert.equal(okRes.mostrarCodigo, true);
+  assert.equal(okRes.codigo, '574199');
+  assert.equal(okRes.fechaCaducidad, '27/12/2026');
+
+  // 2) Pago cancelado -> recarga sigue pendiente y no muestra código
+  const cancelRes = (mod as any).resolverMensajeVueltaPago({
+    pagoParam: 'cancelado',
+    voucherRes: null
+  });
+  assert.equal(cancelRes.estado, 'cancelado');
+  assert.equal(cancelRes.mostrarCodigo, false);
+  assert.match(cancelRes.mensaje, /pendiente/i);
+
+  // 3) Vuelve antes de acreditarse el pago -> 'pago en proceso' y SIN código
+  const procesoRes = (mod as any).resolverMensajeVueltaPago({
+    pagoParam: 'pagado',
+    voucherRes: { ok: false, status: 409, error: 'Aún pendiente' }
+  });
+  assert.equal(procesoRes.estado, 'en_proceso');
+  assert.equal(procesoRes.mostrarCodigo, false);
+  assert.match(procesoRes.mensaje, /pago en proceso/i);
+});
