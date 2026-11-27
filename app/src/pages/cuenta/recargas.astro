@@ -1,0 +1,286 @@
+---
+import {
+  obtenerDatosFiscalesSentinel,
+  resolverServidorClienteMotor
+} from '../../lib/sentinel_fiscales.ts';
+import {
+  clasificarEstadoRecarga,
+  formatearAvisoVigencia,
+  formatearFechaCaducidad,
+  obtenerCatalogoRecargasSentinel,
+  obtenerMisRecargasSentinel
+} from '../../lib/sentinel_recargas.ts';
+
+const user = Astro.locals.user;
+const clienteUsername = Astro.locals.portalCuenta?.cliente;
+if (!user || !clienteUsername) {
+  return Astro.redirect('/login');
+}
+
+const facturaReturnId = String(Astro.url.searchParams.get('factura') || '').trim();
+const servidor = await resolverServidorClienteMotor(clienteUsername);
+const ficha = await obtenerDatosFiscalesSentinel({
+  servidor,
+  cliente_username: clienteUsername
+});
+const clienteId = ficha.ok && ficha.cliente?.id ? String(ficha.cliente.id) : '';
+
+const [catalogo, mis] = await Promise.all([
+  obtenerCatalogoRecargasSentinel(),
+  clienteId ? obtenerMisRecargasSentinel({ clienteId }) : Promise.resolve({ ok: true, status: 200, vigencia_dias: null, recargas: [] })
+]);
+
+const vigenciaDias = catalogo.vigencia_dias ?? mis.vigencia_dias ?? null;
+const avisoVigenciaTexto = formatearAvisoVigencia(vigenciaDias);
+const recargas = mis.recargas || [];
+---
+
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Recargar Saldo — Portal Telvy</title>
+    <style>
+      body { font-family: system-ui, -apple-system, sans-serif; background: #fafaf9; color: #1c1917; margin: 0; padding: 24px 16px; }
+      .wrap { max-width: 780px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+      .card { background: #ffffff; border: 1px solid #e7e5e4; border-radius: 14px; padding: 20px; }
+      .notice { background: #fffbeb; border: 1px solid #fcd34d; color: #92400e; border-radius: 10px; padding: 12px 14px; font-size: 14px; font-weight: 600; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 14px; }
+      .denom-btn { border: 1.5px solid #e7e5e4; background: #ffffff; border-radius: 12px; padding: 16px; text-align: center; cursor: pointer; transition: border-color .15s; }
+      .denom-btn:hover { border-color: #d97706; }
+      .denom-amount { font-size: 22px; font-weight: 800; color: #0c0a09; }
+      .denom-label { font-size: 12px; color: #57534e; margin-top: 4px; }
+      .btn-primary { background: #d97706; color: #ffffff; border: none; border-radius: 10px; padding: 10px 16px; font-weight: 700; cursor: pointer; }
+      .btn-secondary { background: #f5f5f4; color: #1c1917; border: 1px solid #d6d3d1; border-radius: 10px; padding: 8px 12px; font-weight: 600; cursor: pointer; text-decoration: none; font-size: 13px; }
+      .code-box { background: #1c1917; color: #fef3c7; border-radius: 12px; padding: 16px; font-family: ui-monospace, monospace; font-size: 22px; font-weight: 800; letter-spacing: 2px; text-align: center; margin: 10px 0; }
+      .row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; padding: 12px 0; border-bottom: 1px solid #f5f5f4; }
+      .badge { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+      .b-disp { background: #ecfdf5; color: #047857; }
+      .b-pend { background: #fffbeb; color: #b45309; }
+      .b-canj { background: #f5f5f4; color: #57534e; }
+      .b-venc { background: #fef2f2; color: #b91c1c; }
+      .err { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; border-radius: 10px; padding: 10px 14px; font-size: 13px; }
+      .ok { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; border-radius: 10px; padding: 10px 14px; font-size: 13px; }
+      input[type="text"] { border: 1px solid #d6d3d1; border-radius: 10px; padding: 10px 12px; font-size: 15px; font-family: ui-monospace, monospace; flex: 1; }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <h1 style="margin:0;font-size:22px;">Recargar saldo prepago</h1>
+        <a href="/" class="btn-secondary">Volver al panel</a>
+      </div>
+
+      {/* 3.1 y 3.2: Catálogo de denominaciones desde el API + aviso de vigencia visible antes de pagar */}
+      <section class="card">
+        <div class="notice" id="avisoVigenciaCompra">{avisoVigenciaTexto}</div>
+        <div class="grid" id="gridDenominaciones">
+          {catalogo.denominaciones.map((d) => (
+            <button
+              type="button"
+              class="denom-btn"
+              data-denominacion-id={d.id}
+              data-monto={d.monto}
+            >
+              <div class="denom-amount">${Number(d.monto).toFixed(0)} {d.moneda}</div>
+              <div class="denom-label">{d.nombre}</div>
+            </button>
+          ))}
+        </div>
+        <div id="compraFeedback" style="margin-top:12px;"></div>
+      </section>
+
+      {/* 3.4: Panel de código al volver del pago o al consultar una recarga vigente (sólo en pantalla, con sesión) */}
+      <section class="card" id="panelCodigo" style="display:none;">
+        <h2 style="margin:0 0 8px 0;font-size:16px;">Tu código de recarga</h2>
+        <div class="notice" id="avisoVigenciaEntrega">{avisoVigenciaTexto}</div>
+        <div id="codigoContenido" style="margin-top:10px;"></div>
+      </section>
+
+      {/* 3.6: Canjear código en tu cuenta */}
+      <section class="card">
+        <h2 style="margin:0 0 8px 0;font-size:16px;">Canjear un código en tu línea ({clienteUsername})</h2>
+        <form id="formCanje" style="display:flex;gap:10px;flex-wrap:wrap;">
+          <input type="text" id="inputCodigoCanje" placeholder="Ingresa el código del voucher" autocomplete="off" />
+          <button type="submit" class="btn-primary">Canjear ahora</button>
+        </form>
+        <div id="canjeFeedback" style="margin-top:10px;"></div>
+      </section>
+
+      {/* 3.5: Mis Recargas */}
+      <section class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <h2 style="margin:0;font-size:16px;">Mis Recargas</h2>
+          <span style="font-size:12px;color:#57534e;">{avisoVigenciaTexto}</span>
+        </div>
+        {recargas.length === 0 ? (
+          <p style="font-size:13px;color:#78716c;margin:8px 0 0 0;">Aún no tienes recargas registradas.</p>
+        ) : (
+          <div>
+            {recargas.map((r) => {
+              const cls = clasificarEstadoRecarga(r);
+              const cadStr = formatearFechaCaducidad(r.expira_at);
+              const badgeClass =
+                cls.estado === 'disponible'
+                  ? 'badge b-disp'
+                  : cls.estado === 'pendiente_pago'
+                  ? 'badge b-pend'
+                  : cls.estado === 'vencida'
+                  ? 'badge b-venc'
+                  : 'badge b-canj';
+              return (
+                <div class="row">
+                  <div>
+                    <div style="font-weight:700;font-size:14px;">
+                      ${Number(r.monto).toFixed(2)} {r.moneda}
+                      <span class={badgeClass} style="margin-left:8px;">{cls.etiqueta}</span>
+                    </div>
+                    <div style="font-size:12px;color:#57534e;margin-top:3px;">
+                      {cadStr && (
+                        <span>{cls.estado === 'vencida' ? `Caducó el ${cadStr}` : `Vigente hasta el ${cadStr}`}</span>
+                      )}
+                      {cls.estado === 'canjeada' && r.canjeado_cliente_username && (
+                        <span> · Canjeada en cuenta {r.canjeado_cliente_username}</span>
+                      )}
+                    </div>
+                  </div>
+                  <div style="display:flex;gap:8px;align-items:center;">
+                    {cls.estado === 'pendiente_pago' && (
+                      <a href={r.ficha_pago_url} class="btn-secondary">Ir a pagar</a>
+                    )}
+                    {cls.puedeConsultarCodigo && (
+                      <button type="button" class="btn-secondary" data-ver-codigo={r.factura_id}>
+                        Ver código
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+    </main>
+
+    <script define:vars={{ facturaReturnId }}>
+      const compraFeedback = document.getElementById('compraFeedback');
+      const panelCodigo = document.getElementById('panelCodigo');
+      const codigoContenido = document.getElementById('codigoContenido');
+      const canjeFeedback = document.getElementById('canjeFeedback');
+      const inputCodigoCanje = document.getElementById('inputCodigoCanje');
+
+      function fmtFecha(iso) {
+        if (!iso) return null;
+        const d = new Date(iso);
+        if (Number.isNaN(d.getTime())) return null;
+        return `${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}/${d.getUTCFullYear()}`;
+      }
+
+      async function mostrarCodigoFactura(facturaId) {
+        panelCodigo.style.display = 'block';
+        codigoContenido.innerHTML = '<p style="font-size:13px;color:#57534e;">Consultando estado del pago...</p>';
+        try {
+          const res = await fetch(`/api/cuenta/recargas/voucher?facturaId=${encodeURIComponent(facturaId)}`, {
+            cache: 'no-store'
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data.ok) {
+            codigoContenido.innerHTML = `<div class="notice">${data.error || 'Tu pago aún no ha sido aprobado. En cuanto se confirme podrás ver tu código aquí.'}</div>`;
+            return;
+          }
+          const cad = fmtFecha(data.expira_at);
+          if (data.vencido) {
+            codigoContenido.innerHTML = `<div class="err">Este voucher caducó${cad ? ` el ${cad}` : ''} y ya no puede canjearse.</div>`;
+            return;
+          }
+          codigoContenido.innerHTML = `
+            <div class="code-box">${data.codigo}</div>
+            <p style="font-size:13px;color:#44403c;margin:6px 0;">
+              ${cad ? `<strong>Fecha de caducidad:</strong> ${cad}` : ''}
+              · Este código es libre: puedes canjearlo en tu línea o en cualquier cuenta Telvy.
+            </p>
+            <div style="display:flex;gap:8px;margin-top:8px;">
+              <button type="button" class="btn-secondary" id="btnCopiarCodigo">Copiar código</button>
+              <button type="button" class="btn-primary" id="btnUsarCodigo">Canjear en mi línea</button>
+            </div>
+          `;
+          document.getElementById('btnCopiarCodigo')?.addEventListener('click', () => {
+            navigator.clipboard?.writeText(data.codigo);
+          });
+          document.getElementById('btnUsarCodigo')?.addEventListener('click', () => {
+            if (inputCodigoCanje) {
+              inputCodigoCanje.value = data.codigo;
+              inputCodigoCanje.focus();
+            }
+          });
+        } catch {
+          codigoContenido.innerHTML = '<div class="err">No se pudo consultar el código en este momento.</div>';
+        }
+      }
+
+      document.querySelectorAll('[data-denominacion-id]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const denominacionId = btn.getAttribute('data-denominacion-id');
+          compraFeedback.innerHTML = '<p style="font-size:13px;color:#57534e;">Preparando tu ficha de pago...</p>';
+          try {
+            const res = await fetch('/api/cuenta/recargas', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ denominacion_id: denominacionId })
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok || !data.ok || !data.ficha_pago_url) {
+              compraFeedback.innerHTML = `<div class="err">${data.error || 'No se pudo iniciar la compra.'}</div>`;
+              return;
+            }
+            window.location.href = data.ficha_pago_url;
+          } catch {
+            compraFeedback.innerHTML = '<div class="err">Error de conexión al iniciar la compra.</div>';
+          }
+        });
+      });
+
+      document.querySelectorAll('[data-ver-codigo]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const fid = btn.getAttribute('data-ver-codigo');
+          if (fid) void mostrarCodigoFactura(fid);
+        });
+      });
+
+      document.getElementById('formCanje')?.addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        const codigo = String(inputCodigoCanje?.value || '').trim();
+        if (!codigo) {
+          canjeFeedback.innerHTML = '<div class="err">Ingresa el código del voucher.</div>';
+          return;
+        }
+        canjeFeedback.innerHTML = '<p style="font-size:13px;color:#57534e;">Canjeando voucher...</p>';
+        try {
+          const res = await fetch('/api/cuenta/voucher/canjear', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ codigo })
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data.ok) {
+            const cad = fmtFecha(data.expira_at);
+            const msg = cad
+              ? `Este voucher caducó el ${cad} y ya no puede canjearse.`
+              : (data.error || 'No se pudo canjear el voucher.');
+            canjeFeedback.innerHTML = `<div class="err">${msg}</div>`;
+            return;
+          }
+          canjeFeedback.innerHTML = `<div class="ok">Saldo acreditado correctamente ($${Number(data.credit || 0).toFixed(2)} MXN).</div>`;
+          if (inputCodigoCanje) inputCodigoCanje.value = '';
+        } catch {
+          canjeFeedback.innerHTML = '<div class="err">Error de conexión al canjear el voucher.</div>';
+        }
+      });
+
+      if (facturaReturnId) {
+        void mostrarCodigoFactura(facturaReturnId);
+      }
+    </script>
+  </body>
+</html>
