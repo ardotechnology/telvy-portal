@@ -7,19 +7,42 @@ const indexSrc = fs.readFileSync(
   'utf8'
 );
 
-// 1) Aviso visible sobre alcance de cambios fiscales (próximas facturas vs ya emitidas)
-assert.match(
-  indexSrc,
-  /los cambios aplican a las próximas facturas; las ya emitidas conservan los datos con los que se generaron/i
+const avisoRe =
+  /Los cambios aplican a las próximas facturas; las ya emitidas conservan los datos con los que se generaron\./gi;
+
+// 1) El aviso aparece exactamente UNA sola vez (no duplicado)
+const ocurrencias = indexSrc.match(avisoRe) || [];
+assert.equal(
+  ocurrencias.length,
+  1,
+  `El aviso debe aparecer exactamente 1 vez, pero apareció ${ocurrencias.length}`
 );
 
-// 2) Confirmación visible tras guardar correctamente
+// 2) La descripción de la tarjeta conserva únicamente el texto informativo base
+const descMatch = indexSrc.match(
+  /<h2 class="card-title">Datos fiscales<\/h2>\s*<p class="card-desc">([^<]+)<\/p>/
+);
+assert.ok(descMatch, 'Debe existir la descripción de la tarjeta de Datos fiscales');
+assert.equal(
+  descMatch[1].trim(),
+  'Información para la emisión de tus facturas CFDI 4.0.',
+  'La descripción de la tarjeta no debe esconder el aviso de alcance fiscal'
+);
+
+// 3) El aviso vive como elemento propio visible junto al feedback en .fiscal-actions
+const actionsMatch = indexSrc.match(
+  /<div class="fiscal-actions">([\s\S]*?)<\/div>\s*<\/form>/
+);
+assert.ok(actionsMatch, 'Debe existir el bloque .fiscal-actions del formulario fiscal');
+assert.match(actionsMatch[1], /id="fiscalFeedback"/);
+assert.match(actionsMatch[1], /id="fiscalScopeNotice"/);
+assert.match(actionsMatch[1], avisoRe);
+
+// 4) Confirmación visible y sincronización tras guardar se mantienen intactas
 assert.match(
   indexSrc,
   /Datos fiscales guardados y verificados correctamente\./
 );
-
-// 3) Sincronizar el formulario con data.cliente tras el primer guardado
 assert.match(indexSrc, /if \(data\.cliente\)/);
 
-console.log('✅ PORTAL AVISO Y CONFIRMACION DATOS FISCALES PASSED');
+console.log('✅ PORTAL AVISO VISIBLE Y CONFIRMACION DATOS FISCALES PASSED');

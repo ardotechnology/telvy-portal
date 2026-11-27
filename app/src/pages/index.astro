@@ -421,6 +421,19 @@ const fiscalEsFisica = fiscalTipoPersona === 'fisica';
       font-weight: 500;
     }
 
+    .fiscal-scope-notice {
+      flex-basis: 100%;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--color-ink);
+      background-color: var(--color-bone);
+      border: 1px solid var(--color-smoke);
+      border-left: 3px solid var(--color-obsidian);
+      border-radius: var(--radius-sm);
+      padding: 8px 12px;
+      line-height: 1.45;
+    }
+
     /* Bloque 1: Saldo */
     .saldo-grid {
       display: grid;
@@ -1067,10 +1080,10 @@ const fiscalEsFisica = fiscalTipoPersona === 'fisica';
 
     <!-- BLOQUE: DATOS FISCALES -->
     <section class="card" id="seccion-datos-fiscales">
-        <div class="fiscal-header">
+      <div class="fiscal-header">
         <div>
           <h2 class="card-title">Datos fiscales</h2>
-          <p class="card-desc">Información para la emisión de tus facturas CFDI 4.0. Los cambios aplican a las próximas facturas; las ya emitidas conservan los datos con los que se generaron.</p>
+          <p class="card-desc">Información para la emisión de tus facturas CFDI 4.0.</p>
         </div>
         <span
           id="fiscalStatusPill"
@@ -1248,6 +1261,9 @@ const fiscalEsFisica = fiscalTipoPersona === 'fisica';
             Guardar datos fiscales
           </button>
           <div id="fiscalFeedback" class="fiscal-feedback" role="status" aria-live="polite"></div>
+          <div id="fiscalScopeNotice" class="fiscal-scope-notice" role="note">
+            Los cambios aplican a las próximas facturas; las ya emitidas conservan los datos con los que se generaron.
+          </div>
         </div>
       </form>
     </section>
